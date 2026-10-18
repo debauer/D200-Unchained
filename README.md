@@ -104,6 +104,14 @@ cd device && cargo build --target x86_64-unknown-linux-gnu --bin deckd   # for t
 cd host && uv run pytest && uv run ruff check . && uv run mypy
 ```
 
+## AI assistance
+
+This project was built with the help of AI. That applies to the
+software and especially to the research behind it: analysing the firmware, working out the
+hardware and the display and key layout, and designing the protocol. Everything was tested
+on a real D200, but treat it as hobby software: review the code before you rely on it,
+particularly the parts that run commands.
+
 ## License
 
 MIT, see `LICENSE`.
