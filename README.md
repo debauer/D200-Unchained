@@ -10,10 +10,15 @@ changes nothing outside `/userdata/d200` on the device; `adb reboot` restores th
 
 ## Motivation
 
-I am a Linux user and I want to decide for myself what my devices do. The existing software
-did not cover my use case, so I wrote my own. Besides this Linux software I am developing a
-standalone version around an ESP32-S3, which can also cover more home automation use cases.
-That version is work in progress and not part of this repository yet.
+My D200 sat on a shelf for two years. Ulanzi's own software does not run on Linux, and I am a
+Linux user who wants to decide for himself what his devices do. There are projects that make the D200
+usable with Home Assistant or let it trigger events on the system, but none of them were
+comfortable enough, and they always lacked features I wanted. So I wrote my own.
+
+Besides this Linux software I am developing a standalone version around an ESP32-S3, which can
+also cover more home automation use cases. It follows the same principle: the D200 itself is not
+modified, the ESP32 loads everything onto the device via ADB. That version is work in progress
+and not part of this repository yet.
 
 ## Features
 
