@@ -1,0 +1,48 @@
+[project]
+name = "d200-deck"
+version = "0.1.0"
+license = "MIT"
+description = "Host client for deckd, the custom display service on the Ulanzi D200"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pillow>=10.0",
+    "typer>=0.12",
+]
+
+[project.scripts]
+deck = "d200_deck.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+test = ["pytest>=8.0", "pytest-cov>=5.0"]
+lint = ["ruff>=0.6"]
+typecheck = ["mypy>=1.11"]
+dev = [{ include-group = "test" }, { include-group = "lint" }, { include-group = "typecheck" }]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "N", "PL"]
+ignore = ["PLR2004"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_return_any = true
+warn_unused_ignores = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=d200_deck --cov-report=term-missing"

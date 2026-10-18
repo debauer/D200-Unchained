@@ -1,0 +1,57 @@
+// Client for web API v1 (docs/web-api.md).
+
+const MUTATE = { "X-Deck-Request": "1" };
+const keyPath = (page, i) => `/api/pages/${encodeURIComponent(page)}/keys/${i}`;
+
+async function check(res) {
+  if (res.ok) return res;
+  let message = `${res.status} ${res.statusText}`;
+  try {
+    message = (await res.json()).error || message;
+  } catch {
+    // Not a JSON error body; keep the status line.
+  }
+  throw new Error(message);
+}
+
+async function json(path, options = {}) {
+  return (await check(await fetch(path, options))).json();
+}
+
+async function raw(path) {
+  const res = await fetch(path);
+  if (res.status === 404) return null;
+  return new Uint8Array(await (await check(res)).arrayBuffer());
+}
+
+function send(method, path, body, type) {
+  const headers = { ...MUTATE };
+  if (type) headers["Content-Type"] = type;
+  return json(path, { method, headers, body });
+}
+
+export const api = {
+  info: () => json("/api/info"),
+  config: () => json("/api/config"),
+  putConfig: (cfg) => send("PUT", "/api/config", JSON.stringify(cfg), "application/json"),
+  // Keys are addressed per page (the root page is "root").
+  image: (page, i) => raw(`${keyPath(page, i)}/image`),
+  putImage: (page, i, bytes) => send("PUT", `${keyPath(page, i)}/image`, bytes, "application/octet-stream"),
+  deleteImage: (page, i) => send("DELETE", `${keyPath(page, i)}/image`),
+  icon: (page, i) => raw(`${keyPath(page, i)}/icon`),
+  putIcon: (page, i, bytes) => send("PUT", `${keyPath(page, i)}/icon`, bytes, "application/octet-stream"),
+  deleteIcon: (page, i) => send("DELETE", `${keyPath(page, i)}/icon`),
+  press: (page, i) => send("POST", `${keyPath(page, i)}/press`),
+  showPage: (page) => send("POST", "/api/page", JSON.stringify({ page }), "application/json"),
+  // handlers: { key, status, action, brightness, page, values } -> called with the event data;
+  // { offline(), online() } when the stream to the host breaks / (re)opens.
+  events(handlers) {
+    const source = new EventSource("/api/events");
+    for (const kind of ["key", "status", "action", "brightness", "page", "values"]) {
+      source.addEventListener(kind, (e) => handlers[kind]?.(JSON.parse(e.data)));
+    }
+    source.onerror = () => handlers.offline?.();
+    source.onopen = () => handlers.online?.();
+    return source;
+  },
+};

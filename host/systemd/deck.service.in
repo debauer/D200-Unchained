@@ -1,0 +1,12 @@
+[Unit]
+Description=D200 deck host service (deck serve: keys, actions, web UI)
+Documentation=file://@DOCS@
+
+[Service]
+ExecStart=@DECK@ serve
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

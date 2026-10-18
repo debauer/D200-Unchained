@@ -1,0 +1,15 @@
+[package]
+name = "d200-device"
+version = "0.1.0"
+license = "MIT"
+edition = "2021"
+description = "On-device display and key access for the Ulanzi D200"
+
+[dependencies]
+libc = "0.2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+strip = true
