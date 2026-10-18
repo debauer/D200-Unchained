@@ -105,15 +105,40 @@ than in a public issue.
 
 ## Development
 
-- Device code: `device/` (Cargo, target ARMv7 musl via `.cargo/config.toml`).
-- Host client: see `host/README.md`.
+The project has two parts that you can work on separately:
+
+- **`device/`** is the Rust program `deckd` that runs on the D200. It draws the keys and
+  reports key presses. It is built for the device's ARMv7 CPU (set in `device/.cargo/config.toml`),
+  so a plain `cargo build` produces a binary that only runs on the D200. `./install.sh` does this
+  build for you.
+- **`host/`** is the Python program `deck` that runs on your PC. It contains the configuration,
+  the key actions and the web UI (`host/src/d200_deck/web/static/`, plain JavaScript without a
+  build step). See `host/README.md` for details.
+
+To work on the host code:
+
+```sh
+cd host
+uv sync                                         # create the virtual environment
+uv run deck serve --verbose                     # run the service from your checkout
+uv run ruff check . && uv run mypy              # lint and type check
+```
 
 ## Tests
 
+Run them from the repository root:
+
 ```sh
-cd device && cargo test --target x86_64-unknown-linux-gnu
-cd device && cargo build --target x86_64-unknown-linux-gnu --bin deckd   # for the E2E test
-cd host && uv run pytest && uv run ruff check . && uv run mypy
+(cd host && uv run pytest)                                            # host and web UI tests
+(cd device && cargo test --target x86_64-unknown-linux-gnu)           # device tests, run on your PC
+```
+
+The device tests run on your PC (x86_64), not on the D200, which is why the target is given.
+One optional host test starts a `deckd` built for your PC against fake files; it is skipped unless
+you build that binary first:
+
+```sh
+(cd device && cargo build --target x86_64-unknown-linux-gnu --bin deckd)
 ```
 
 ## AI assistance
