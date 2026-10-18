@@ -8,6 +8,14 @@ web configurator.
 This project is not affiliated with Ulanzi. It replaces the vendor app at runtime and
 changes nothing outside `/userdata/d200` on the device; `adb reboot` restores the stock UI.
 
+## Preview
+
+The web configurator: edit a key (image, colours, text, action) and test it live.
+
+![Web configurator, EDIT mode](img/web-edit.jpg)
+
+![Web configurator, TEST mode with event log](img/web-test.jpg)
+
 | Folder | Content |
 |---|---|
 | `device/` | Rust crate for the device: `deckd`, `hello`, `calibrate` |
@@ -37,9 +45,9 @@ To start it at login, enable the systemd user unit written by `install.sh`. See
 ## Tests
 
 ```sh
-(cd device && cargo test --target x86_64-unknown-linux-gnu)
-(cd device && cargo build --target x86_64-unknown-linux-gnu --bin deckd)   # for the E2E test
-(cd host && uv run pytest && uv run ruff check . && uv run mypy)
+cd device && cargo test --target x86_64-unknown-linux-gnu
+cd device && cargo build --target x86_64-unknown-linux-gnu --bin deckd   # for the E2E test
+cd host && uv run pytest && uv run ruff check . && uv run mypy
 ```
 
 ## License
