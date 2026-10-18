@@ -8,6 +8,13 @@ web configurator.
 This project is not affiliated with Ulanzi. It replaces the vendor app at runtime and
 changes nothing outside `/userdata/d200` on the device; `adb reboot` restores the stock UI.
 
+## Motivation
+
+I am a Linux user and I want to decide for myself what my devices do. The existing software
+did not cover my use case, so I wrote my own. Besides this Linux software I am developing a
+standalone version around an ESP32-S3, which can also cover more home automation use cases.
+That version is work in progress and not part of this repository yet.
+
 ## Features
 
 - **No firmware changes**: the vendor firmware stays untouched. `deckd` runs from `/userdata/d200` and
