@@ -62,6 +62,10 @@ The user service only sees the default `PATH`; if `adb` lives elsewhere, set
 **Web interface** ("D200 // Configurator"): `deck serve` serves it at
 <http://127.0.0.1:7280/> (`--web HOST:PORT`, `--no-web`).
 
+![EDIT mode](../img/web-edit.jpg)
+
+![TEST mode](../img/web-test.jpg)
+
 - **EDIT**: click a key and design it on the right: image (choose a file or drop
   it), background colour, text with colour (quick pick or colour picker), position
   and size, action (command, brightness -/+, display off/on). Changes are saved
