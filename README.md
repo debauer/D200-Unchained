@@ -8,6 +8,27 @@ web configurator.
 This project is not affiliated with Ulanzi. It replaces the vendor app at runtime and
 changes nothing outside `/userdata/d200` on the device; `adb reboot` restores the stock UI.
 
+## Features
+
+- **No firmware changes**: the vendor firmware stays untouched. `deckd` runs from `/userdata/d200` and
+  the stock app is only stopped while it runs; `adb reboot` brings the original UI back.
+- **Custom key images**: set an image or icon per key (file picker or drag and drop), with
+  optional text on top (position, size, colour).
+- **Colours**: background and text colours per key, with page-wide defaults you can change in
+  one place; a key can be reset to follow the default again.
+- **Subpages**: build a page tree with `page` and `back` keys, move pages around by drag and
+  drop.
+- **Actions**: run shell commands, change the backlight, switch the display off and on.
+- **Live values**: show the output of shell commands on keys (e.g. `CPU {cpu}%`, polled at an
+  interval you choose), plus a built-in clock and date.
+- **Web configurator**: edit and test everything in the browser, changes are saved and shown on
+  the device immediately; import and export the configuration as JSON. The UI also works
+  without a device.
+- **Runs unattended**: `deck serve` brings the device up via `adb`, reconnects after replugging
+  and reloads the configuration when it changes; an optional systemd user unit starts it at
+  login.
+- **Local by default**: the web UI listens on `127.0.0.1` only, because it can configure commands.
+
 ## Preview
 
 The web configurator: edit a key (image, colours, text, action) and test it live.
