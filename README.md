@@ -16,11 +16,14 @@ The web configurator: edit a key (image, colours, text, action) and test it live
 
 ![Web configurator, TEST mode with event log](img/web-test.jpg)
 
+## Layout
+
 | Folder | Content |
 |---|---|
 | `device/` | Rust crate for the device: `deckd`, `hello`, `calibrate` |
 | `host/` | Python package `d200-deck` with the `deck` command and the web UI |
 | `docs/` | `protocol.md` (deckd protocol), `web-api.md` (HTTP API), `hardware.md` (display, keys, layout) |
+| `img/` | Screenshots for this README |
 
 ## Installation
 
