@@ -61,6 +61,36 @@ outside `/userdata/d200` is changed on the device; `adb reboot` restores the sto
 To start it at login, enable the systemd user unit written by `install.sh`. See
 `host/README.md` for the CLI, configuration format and autostart.
 
+## Security
+
+The web configurator can define shell commands, so treat access to it like a shell
+on the host. There is **no authentication yet**; a password feature is planned.
+Until then:
+
+- **Keep the web UI on `127.0.0.1`** (the default). Anyone who can open it can run
+  commands as the user running `deck serve`: key commands run on a key press, and
+  variable commands (`sh -c`) run on their own as soon as they are saved. Do not use
+  `--web 0.0.0.0:...` on an untrusted network; `deck serve` logs a warning when you do.
+- **Other local users** of the same machine can reach `127.0.0.1:7280` as well. Do not run
+  `deck serve` on a shared machine. For remote access use an SSH tunnel instead of
+  exposing the port.
+- **Websites cannot reach it**: the API only answers requests with the expected `Host`
+  header (protects against DNS rebinding) and requires the header `X-Deck-Request: 1` on
+  changing requests (see `docs/web-api.md`).
+- **The TEST tab never runs commands**; it only logs them. Device and page actions do run.
+- **Protect the configuration**: `$XDG_CONFIG_HOME/deck/config.json` contains your commands;
+  whoever can write it can run commands. Keep it writable only by you.
+- **Do not put secrets into commands or key texts**: keys, variable values and the
+  configuration are visible in the UI and on the device screen.
+- **Device side**: `deckd` listens on `127.0.0.1:7200` on the D200 only and is reached through
+  `adb forward`, which makes the port available to local users of the host. `deckd` has no
+  authentication either, so anyone with access to that port can draw on the screen. `adb`
+  itself gives a root shell on the stock firmware: keep the device physically controlled.
+
+Planned: a password for the web UI and API. Until it exists, do not expose the UI beyond
+your own machine. Please report security problems privately to the repository owner rather
+than in a public issue.
+
 ## Development
 
 - Device code: `device/` (Cargo, target ARMv7 musl via `.cargo/config.toml`).
