@@ -1,4 +1,4 @@
-# ulanzi_d200_tooling
+# d200-unchained
 
 Use the Ulanzi D200 as a standalone control panel with your own software, without the
 vendor app. A small Rust service, `deckd`, runs on the device and draws the 14 key
