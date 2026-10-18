@@ -138,6 +138,8 @@ Configuration (JSON, same format later on the ESP32; version 1 files with a flat
 
 ## As a library
 
+A longer guide with examples (images, key callbacks) is in [../docs/python-library.md](../docs/python-library.md).
+
 ```python
 from d200_deck.device.client import DeckClient
 from d200_deck.device.events import KeyDispatcher

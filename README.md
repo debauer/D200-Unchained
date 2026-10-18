@@ -55,7 +55,7 @@ The web configurator: edit a key (image, colours, text, action) and test it live
 |---|---|
 | `device/` | Rust crate for the device: `deckd`, `hello`, `calibrate` |
 | `host/` | Python package `d200-deck` with the `deck` command and the web UI |
-| `docs/` | `protocol.md` (deckd protocol), `web-api.md` (HTTP API), `hardware.md` (display, keys, layout) |
+| `docs/` | `python-library.md` (write your own Python programs), `protocol.md` (deckd protocol), `web-api.md` (HTTP API), `hardware.md` (display, keys, layout) |
 | `img/` | Screenshots for this README |
 
 ## Installation
@@ -103,6 +103,11 @@ Planned: a password for the web UI and API. Until it exists, do not expose the U
 your own machine. Please report security problems privately to the repository owner rather
 than in a public issue.
 
+## Your own programs
+
+The Python package can also be used as a library: draw on keys, react to key presses, show
+your own data. See [docs/python-library.md](docs/python-library.md).
+
 ## Development
 
 The project has two parts that you can work on separately:
@@ -129,8 +134,8 @@ uv run ruff check . && uv run mypy              # lint and type check
 Run them from the repository root:
 
 ```sh
-(cd host && uv run pytest)                                            # host and web UI tests
-(cd device && cargo test --target x86_64-unknown-linux-gnu)           # device tests, run on your PC
+cd host && uv run pytest                                            # host and web UI tests
+cd device && cargo test --target x86_64-unknown-linux-gnu           # device tests, run on your PC
 ```
 
 The device tests run on your PC (x86_64), not on the D200, which is why the target is given.
@@ -138,7 +143,7 @@ One optional host test starts a `deckd` built for your PC against fake files; it
 you build that binary first:
 
 ```sh
-(cd device && cargo build --target x86_64-unknown-linux-gnu --bin deckd)
+cd device && cargo build --target x86_64-unknown-linux-gnu --bin deckd
 ```
 
 ## AI assistance
