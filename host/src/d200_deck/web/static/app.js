@@ -172,6 +172,7 @@ async function openPage(page, tellDevice = true) {
   if (!pageOf(state.config, page)) return;
   state.page = page;
   pages.render(state.config, page);
+  state.info.keys.forEach((k) => drawKey(k.index)); // at once with this page's colours; images and values follow
   // Save first: a page created a moment ago is unknown to the host until then.
   if (tellDevice) autosave.flush().then(() => api.showPage(page)).catch(fail);
   await ensurePageImages(page);
