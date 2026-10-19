@@ -6,3 +6,4 @@ dependencies.lock
 .pio/
 sdkconfig.*
 !sdkconfig.defaults
+.venv/

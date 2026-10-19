@@ -15,14 +15,15 @@ powered; check them against the schematic of your board revision. The flash layo
 
 ## Build and flash
 
-[PlatformIO](https://platformio.org/) with the ESP-IDF framework (`pip install platformio`):
+[PlatformIO](https://platformio.org/) with the ESP-IDF framework, installed by uv (Python 3.10-3.13):
 
 ```sh
 cd esp32
-pio run -t menuconfig      # "D200 host": WiFi SSID and password
-pio run -t upload          # firmware
-pio run -t uploadfs        # web UI (../host/src/d200_deck/web/static) into the `www` partition
-pio device monitor         # log, on the COM port
+uv sync
+uv run pio run -t menuconfig      # "D200 host": WiFi SSID and password
+uv run pio run -t upload          # firmware
+uv run pio run -t uploadfs        # web UI (../host/src/d200_deck/web/static) into the `www` partition
+uv run pio device monitor         # log, on the COM port
 ```
 
 Flash the web UI again whenever the files in `host/.../web/static/` change. The log shows the IP
