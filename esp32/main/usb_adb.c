@@ -17,7 +17,9 @@ static const char *TAG = "adb";
 #define ADB_CLASS 0xFF
 #define ADB_SUBCLASS 0x42
 #define ADB_PROTOCOL 0x01
-#define SESSION_ATTEMPTS 5
+#define SESSION_ATTEMPTS 8
+#define SETTLE_MS 1500
+#define REAPPEAR_MS 5000
 
 static volatile bool s_present;  /* ADB interface claimed */
 static volatile bool s_attached; /* a device is on the bus */
@@ -106,15 +108,23 @@ static void adb_task(void *arg)
     a->client = s_client;
     for (;;) {
         xSemaphoreTake(s_new_dev, portMAX_DELAY);
-        /* A failed try (the link can die when the display changes): reset the bus and open again. */
-        for (int attempt = 1; s_attached && attempt <= SESSION_ATTEMPTS; attempt++) {
+        /* The vendor app seems to reconfigure the USB gadget shortly after a host appears, which kills the
+         * link. Wait until the bus has been quiet for a while; after a failure wait for the device to come
+         * back by itself, and reset the port only if it does not. */
+        for (int attempt = 1; attempt <= SESSION_ATTEMPTS; attempt++) {
+            while (xSemaphoreTake(s_new_dev, pdMS_TO_TICKS(SETTLE_MS)) == pdTRUE) {
+            }
+            if (!s_attached) break; /* gone again: wait for the next one */
             if (session(a, s_new_address) == ESP_OK) break;
-            ESP_LOGW(TAG, "attempt %d failed, resetting the USB port", attempt);
+            ESP_LOGW(TAG, "attempt %d failed, waiting for the device to come back", attempt);
             s_present = false;
-            usb_host_lib_set_root_port_power(false);
-            vTaskDelay(pdMS_TO_TICKS(500));
-            usb_host_lib_set_root_port_power(true);
-            if (xSemaphoreTake(s_new_dev, pdMS_TO_TICKS(8000)) != pdTRUE) ESP_LOGW(TAG, "no device after the reset");
+            if (xSemaphoreTake(s_new_dev, pdMS_TO_TICKS(REAPPEAR_MS)) != pdTRUE) {
+                ESP_LOGW(TAG, "device did not come back: resetting the USB port");
+                usb_host_lib_set_root_port_power(false);
+                vTaskDelay(pdMS_TO_TICKS(500));
+                usb_host_lib_set_root_port_power(true);
+                xSemaphoreTake(s_new_dev, pdMS_TO_TICKS(8000));
+            }
         }
     }
 }

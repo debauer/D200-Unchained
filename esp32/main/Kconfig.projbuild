@@ -11,7 +11,7 @@ menu "D200 host"
     config D200_WIFI_TX_POWER
         int "WiFi TX power (units of 0.25 dBm, 8..84)"
         range 8 84
-        default 34
+        default 80
         help
             WiFi transmit bursts can pull the 5 V of the USB-OTG port down and break the link to the
             D200. A low power is plenty at a good signal (RSSI -50 dBm or better).
