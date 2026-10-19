@@ -9,6 +9,7 @@
 #include "freertos/task.h"
 #include "adb.h"
 #include "bootstrap.h"
+#include "deckd.h"
 #include "usb/usb_host.h"
 
 static const char *TAG = "adb";
@@ -60,6 +61,9 @@ static esp_err_t session(adb_t *a, uint8_t address)
         ESP_LOGI(TAG, "ADB interface %u, endpoints in 0x%02x out 0x%02x", a->iface, a->in_ep, a->out_ep);
         if (adb_connect(a) == ESP_OK && bootstrap_deckd(a) == ESP_OK) {
             result = ESP_OK;
+            deckd_t *d = malloc(sizeof *d);
+            if (d && deckd_selftest(d, a) != ESP_OK) ESP_LOGE(TAG, "deckd self test failed");
+            free(d);
             while (s_present) vTaskDelay(pdMS_TO_TICKS(500)); /* the deckd client will live here */
         }
         usb_host_interface_release(a->client, a->dev, a->iface);
