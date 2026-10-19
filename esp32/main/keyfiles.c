@@ -173,9 +173,9 @@ esp_err_t keyfiles_handler(httpd_req_t *req)
     if (strcmp(t.what, "press") == 0) {
         if (req->method != HTTP_POST) return web_json_error(req, "405 Method Not Allowed", "method not allowed on press");
         if (!web_mutation_allowed(req)) return web_json_error(req, "403 Forbidden", "missing X-Deck-Request header");
-        /* TEST mode: the action runs as if the key was pressed; there are no commands on this host to hold back */
+        /* TEST mode: the action runs as if the key was pressed, but nothing is published */
         char json[24];
-        snprintf(json, sizeof json, "{\"started\":%s}", actions_run(t.index, t.page) ? "true" : "false");
+        snprintf(json, sizeof json, "{\"started\":%s}", actions_run(t.index, t.page, true) ? "true" : "false");
         httpd_resp_set_type(req, "application/json");
         return httpd_resp_sendstr(req, json);
     }

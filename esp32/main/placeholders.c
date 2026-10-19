@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "mqtt.h"
 #include "wallclock.h"
 
 #define NAME_MAX_LEN 32
@@ -35,14 +36,14 @@ bool placeholders_present(const char *text)
     return false;
 }
 
-static bool is_variable(const cJSON *variables, const char *name)
+static const cJSON *find_variable(const cJSON *variables, const char *name)
 {
     const cJSON *v;
     cJSON_ArrayForEach(v, variables) {
         const cJSON *n = cJSON_GetObjectItem(v, "name");
-        if (cJSON_IsString(n) && strcmp(n->valuestring, name) == 0) return true;
+        if (cJSON_IsString(n) && strcmp(n->valuestring, name) == 0) return v;
     }
-    return false;
+    return NULL;
 }
 
 static void builtin(const char *name, char *out, size_t size)
@@ -60,10 +61,49 @@ static void builtin(const char *name, char *out, size_t size)
     }
 }
 
+placeholder_t placeholders_value(const cJSON *variables, const char *name, char *out, size_t size)
+{
+    if (strcmp(name, "time") == 0 || strcmp(name, "date") == 0) {
+        builtin(name, out, size);
+        return PLACEHOLDER_VALUE;
+    }
+    const cJSON *v = find_variable(variables, name);
+    if (!v) return PLACEHOLDER_UNKNOWN;
+    const cJSON *type = cJSON_GetObjectItem(v, "type");
+    if (!cJSON_IsString(type) || strcmp(type->valuestring, "mqtt") != 0) { /* no source for this type here */
+        snprintf(out, size, "?");
+        return PLACEHOLDER_VALUE;
+    }
+    if (mqtt_value(name, out, size)) return PLACEHOLDER_VALUE;
+    snprintf(out, size, "...");
+    return PLACEHOLDER_PENDING;
+}
+
+char *placeholders_values_json(const cJSON *variables)
+{
+    cJSON *values = cJSON_CreateObject();
+    char value[MQTT_VALUE_SIZE];
+    static const char *const builtins[] = {"time", "date"};
+    for (size_t i = 0; values && i < 2; i++) {
+        placeholders_value(variables, builtins[i], value, sizeof value);
+        cJSON_AddStringToObject(values, builtins[i], value);
+    }
+    const cJSON *v;
+    cJSON_ArrayForEach(v, variables) {
+        const cJSON *name = cJSON_GetObjectItem(v, "name");
+        if (values && cJSON_IsString(name) && placeholders_value(variables, name->valuestring, value, sizeof value) == PLACEHOLDER_VALUE) {
+            cJSON_AddStringToObject(values, name->valuestring, value);
+        }
+    }
+    char *text = values ? cJSON_PrintUnformatted(values) : NULL;
+    cJSON_Delete(values);
+    return text;
+}
+
 void placeholders_fill(const char *text, const cJSON *variables, char *out, size_t size)
 {
     size_t used = 0;
-    char name[NAME_MAX_LEN + 1], value[24];
+    char name[NAME_MAX_LEN + 1], value[MQTT_VALUE_SIZE];
     for (const char *p = text; *p && used + 1 < size;) {
         if ((p[0] == '{' && p[1] == '{') || (p[0] == '}' && p[1] == '}')) {
             out[used++] = p[0];
@@ -72,9 +112,8 @@ void placeholders_fill(const char *text, const cJSON *variables, char *out, size
         }
         size_t n = token_length(p, name);
         if (n) {
-            if (strcmp(name, "time") == 0 || strcmp(name, "date") == 0) builtin(name, value, sizeof value);
-            else if (is_variable(variables, name)) snprintf(value, sizeof value, "?");
-            else n = 0; /* unknown: stays as written, so a typo is visible */
+            if (placeholders_value(variables, name, value, sizeof value) == PLACEHOLDER_UNKNOWN)
+                n = 0; /* unknown: stays as written, so a typo is visible */
             if (n) {
                 size_t len = strlen(value);
                 if (used + len >= size) break;

@@ -66,7 +66,7 @@ esp_err_t draw_page(deckd_t *d, const device_state_t *state, uint32_t keys, bool
         if (w->index >= 32 || !(keys & (1u << w->index))) continue;
         drawn++;
         const cJSON *key = page ? config_find_key(page, w->index) : NULL;
-        if (drawdyn_is_dynamic(key, w)) { /* placeholders or the clock: drawn here, not uploaded */
+        if (drawdyn_is_dynamic(config, key, state->page, w)) { /* placeholders or the clock: drawn here, not uploaded */
             err = drawdyn_key(d, config, page, state->page, key, w);
             continue;
         }
@@ -99,15 +99,31 @@ static bool same_text(const cJSON *a, const cJSON *b, const char *name)
     return strcmp(x->valuestring, y->valuestring) == 0;
 }
 
+static bool same_number(const cJSON *a, const cJSON *b, const char *name)
+{
+    const cJSON *x = a ? cJSON_GetObjectItem(a, name) : NULL, *y = b ? cJSON_GetObjectItem(b, name) : NULL;
+    if (!cJSON_IsNumber(x) || !cJSON_IsNumber(y)) return !cJSON_IsNumber(x) && !cJSON_IsNumber(y);
+    return x->valuedouble == y->valuedouble;
+}
+
 static bool same_look(const cJSON *a, const cJSON *b)
 {
-    return same_text(a, b, "color") && same_text(a, b, "image");
+    static const char *const texts[] = {"color", "image", "label", "label_color", "label_pos"};
+    for (size_t i = 0; i < sizeof texts / sizeof texts[0]; i++) {
+        if (!same_text(a, b, texts[i])) return false;
+    }
+    const cJSON *ra = a ? cJSON_GetObjectItem(a, "rules") : NULL, *rb = b ? cJSON_GetObjectItem(b, "rules") : NULL;
+    bool rules = (!ra && !rb) || (ra && rb && cJSON_Compare(ra, rb, true)) || (cJSON_GetArraySize(ra) == 0 && cJSON_GetArraySize(rb) == 0);
+    return rules && same_number(a, b, "label_size");
 }
 
 void draw_request_changes(const cJSON *before, const cJSON *after, const char *page_id)
 {
     const cJSON *pa = before ? config_find_page(before, page_id) : NULL, *pb = config_find_page(after, page_id);
-    if (!pb || !pa || !same_text(before, after, "background") || !same_text(pa, pb, "color")) {
+    bool shared = pa && pb && same_text(before, after, "background") && same_text(pa, pb, "color") &&
+                  same_text(pa, pb, "label_color") && same_text(pa, pb, "accent_color");
+    const cJSON *va = before ? cJSON_GetObjectItem(before, "variables") : NULL, *vb = cJSON_GetObjectItem(after, "variables");
+    if (!shared || (va || vb ? !va || !vb || !cJSON_Compare(va, vb, true) : false)) { /* variables decide the placeholders */
         device_request_redraw(-1);
         return;
     }

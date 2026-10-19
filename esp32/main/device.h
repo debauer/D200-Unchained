@@ -38,6 +38,9 @@ void device_set_page(const char *id);
 /* JSON for GET /api/info (needs `size` bytes, truncated otherwise); returns the length. */
 size_t device_info_json(char *out, size_t size);
 
+/* The `values` object of /api/info and the `values` event (variable values plus time and date). free() it. */
+char *device_values_json(void);
+
 /* Body of the SSE event `name` ("status", "brightness", "page", "values") in its current state. */
 void device_event_json(const char *name, char *out, size_t size);
 

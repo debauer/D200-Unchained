@@ -79,13 +79,13 @@ All `/api/keys/<index>/...` endpoints also exist per page as
 - `actions`: action types this host can execute. The UI offers only these. Both
   hosts: `bl_down`, `bl_up` (brightness -/+ 20 %), `disp_off`, `disp_on`, `page`
   (open subpage `target`), `back` (to the parent page). Linux additionally
-  `command` and `mqtt` (publish a message, see [mqtt.md](mqtt.md)); an ESP32 later e.g. `http`. Unknown types in the
+  `command`; both hosts `mqtt` (publish a message, see [mqtt.md](mqtt.md)); an ESP32 later e.g. `http`. Unknown types in the
   configuration are kept but not executed.
 - `page`: the page the device is currently showing.
 - `values`: current values of the placeholder variables (only variables of the
   shown page are polled) plus the built-in `time` and `date`. `!` = command
   failed, `?` = type not supported by this host.
-- `variable_types`: variable types this host can read (Linux: `command`, `mqtt`; an ESP32
+- `variable_types`: variable types this host can read (Linux: `command`, `mqtt`; ESP32: `mqtt`,
   later e.g. `http`).
 - `brightness`: current runtime state. `level` (0-255) applies while the display is
   on; `brightness` in the configuration is only the start value and sets `level`

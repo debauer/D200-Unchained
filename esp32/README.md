@@ -10,8 +10,11 @@ the bootstrap (stops the vendor app, pushes the embedded `deckd` to the D200 if 
 stores the configuration (`/api/config`). Key images and icons are stored and drawn (the web UI composes them in the browser). Key actions run on the device (backlight
 -/+, display on/off, page, back; `POST .../press` in the TEST tab, `POST /api/page`). Keys with `{time}`/`{date}`
 placeholders and the info window's clock are drawn by the firmware itself (stb_truetype with Chakra Petch, converted
-from the web interface's woff2 at build time) and refreshed every minute. Not done: variables with a source
-(`command` has none on this host; `http`/`mqtt` follow), colour rules.
+from the web interface's woff2 at build time) and refreshed every minute. MQTT works as in [docs/mqtt.md](../docs/mqtt.md)
+(esp-mqtt): broker settings in the web UI, `mqtt` variables with JSON path, the `mqtt` publish action and colour
+rules with the second image. The broker settings are stored in plain text in the `storage` partition (`mqtt.json`;
+flash is not encrypted); the web API never returns the password. Not done: variables of type `command` (no source on
+this host, they show `?`), `http`.
 
 ## Hardware
 

@@ -1,9 +1,12 @@
 #include "esp_littlefs.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "cJSON.h"
+#include "config.h"
 #include "device.h"
 #include "keyfiles.h"
 #include "logbuf.h"
+#include "mqtt.h"
 #include "wallclock.h"
 #include "usb_adb.h"
 #include "web.h"
@@ -37,6 +40,10 @@ void app_main(void)
     usb_adb_start(); /* independent of WiFi */
     if (wifi_start() == ESP_OK) {
         wallclock_start();
+        mqtt_start();
+        cJSON *config = config_parse();
+        mqtt_configure(config);
+        cJSON_Delete(config);
         ESP_ERROR_CHECK(web_start());
     }
 }

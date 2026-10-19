@@ -9,6 +9,7 @@
 #include "device.h"
 #include "esp_log.h"
 #include "events.h"
+#include "mqtt.h"
 
 static const char *TAG = "actions";
 #define STEP 51 /* 20 % of 255, as on the Linux host */
@@ -75,7 +76,27 @@ static void backlight(const char *type, char *detail, size_t size)
     else snprintf(detail, size, "display off");
 }
 
-bool actions_run(unsigned index, const char *page)
+/* Publishes the key's message; in the web UI's TEST mode it is only reported. Starts the line with '!' on failure. */
+static bool publish(const cJSON *action, bool test, char *detail, size_t size)
+{
+    const cJSON *topic = cJSON_GetObjectItem(action, "topic"), *payload = cJSON_GetObjectItem(action, "payload");
+    const cJSON *retain = cJSON_GetObjectItem(action, "retain"), *qos = cJSON_GetObjectItem(action, "qos");
+    const char *t = cJSON_IsString(topic) ? topic->valuestring : "", *p = cJSON_IsString(payload) ? payload->valuestring : "";
+    if (!t[0]) {
+        snprintf(detail, size, "! topic not set");
+        return false;
+    }
+    if (test) {
+        snprintf(detail, size, "(test, not sent) mqtt %s %s", t, p);
+        return false;
+    }
+    const char *error = mqtt_publish(t, p, cJSON_IsNumber(qos) ? qos->valueint : 0, cJSON_IsTrue(retain));
+    if (error) snprintf(detail, size, "! %s", error);
+    else snprintf(detail, size, "mqtt %s %s", t, p);
+    return error == NULL;
+}
+
+bool actions_run(unsigned index, const char *page, bool test)
 {
     cJSON *config = config_parse();
     const cJSON *p = config ? config_find_page(config, page) : NULL;
@@ -89,6 +110,8 @@ bool actions_run(unsigned index, const char *page)
         if (strcmp(t, "page") == 0 || strcmp(t, "back") == 0) {
             navigate(config, t, action, detail, sizeof detail);
             ran = detail[0] != '!';
+        } else if (strcmp(t, "mqtt") == 0) {
+            ran = publish(action, test, detail, sizeof detail);
         } else if (strcmp(t, "bl_up") == 0 || strcmp(t, "bl_down") == 0 || strcmp(t, "disp_on") == 0 ||
                    strcmp(t, "disp_off") == 0) {
             backlight(t, detail, sizeof detail);

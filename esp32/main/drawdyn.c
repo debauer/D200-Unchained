@@ -10,6 +10,7 @@
 #include "esp_log.h"
 #include "placeholders.h"
 #include "render.h"
+#include "rules.h"
 #include "wallclock.h"
 
 static const char *TAG = "drawdyn";
@@ -34,20 +35,29 @@ static bool shows_clock(const cJSON *key, const device_key_t *w)
     return w->width > w->height * 3 / 2 && !text_of(key, "image")[0] && blank(text_of(key, "label"));
 }
 
-bool drawdyn_is_dynamic(const cJSON *key, const device_key_t *w)
+/* The file of a key's icon ("-icon") or second icon ("-alt"), RGB565 in exactly the window size. */
+static void icon_path(char *path, size_t size, const char *page_id, const device_key_t *w, const char *kind)
 {
-    return shows_clock(key, w) || placeholders_present(text_of(key, "label"));
+    char name[96];
+    config_image_name(name, sizeof name, page_id, w->index, kind);
+    snprintf(path, size, IMAGE_DIR "/%s", name);
+}
+
+static bool has_icon(const char *page_id, const device_key_t *w, const char *kind)
+{
+    char path[sizeof IMAGE_DIR + 128];
+    struct stat st;
+    icon_path(path, sizeof path, page_id, w, kind);
+    return stat(path, &st) == 0 && (size_t)st.st_size == (size_t)w->width * w->height * 2;
 }
 
 /* The unlabelled icon of a key (RGB565, exactly the window size), or NULL. Free with free(). */
-static uint8_t *load_icon(const char *page_id, const device_key_t *w)
+static uint8_t *load_icon(const char *page_id, const device_key_t *w, const char *kind)
 {
-    char name[96], path[sizeof IMAGE_DIR + 128];
-    config_image_name(name, sizeof name, page_id, w->index, "-icon");
-    snprintf(path, sizeof path, IMAGE_DIR "/%s", name);
+    char path[sizeof IMAGE_DIR + 128];
+    icon_path(path, sizeof path, page_id, w, kind);
     size_t size = (size_t)w->width * w->height * 2;
-    struct stat st;
-    FILE *f = stat(path, &st) == 0 && (size_t)st.st_size == size ? fopen(path, "rb") : NULL;
+    FILE *f = has_icon(page_id, w, kind) ? fopen(path, "rb") : NULL;
     uint8_t *icon = f ? malloc(size) : NULL;
     if (icon && fread(icon, 1, size, f) != size) {
         free(icon);
@@ -55,6 +65,15 @@ static uint8_t *load_icon(const char *page_id, const device_key_t *w)
     }
     if (f) fclose(f);
     return icon;
+}
+
+/* A matching colour rule recolours the key or swaps in its second icon; a picture without a stored icon cannot be
+ * recoloured, so it stays what it is. */
+bool drawdyn_is_dynamic(const cJSON *config, const cJSON *key, const char *page_id, const device_key_t *w)
+{
+    if (shows_clock(key, w) || placeholders_present(text_of(key, "label"))) return true;
+    return rules_match(cJSON_GetObjectItem(config, "variables"), key) &&
+           (has_icon(page_id, w, "-alt") || has_icon(page_id, w, "-icon") || !text_of(key, "image")[0]);
 }
 
 esp_err_t drawdyn_key(deckd_t *d, const cJSON *config, const cJSON *page, const char *page_id, const cJSON *key,
@@ -79,7 +98,12 @@ esp_err_t drawdyn_key(deckd_t *d, const cJSON *config, const cJSON *page, const 
     buf[4] = w->width >> 8;
     buf[5] = w->height;
     buf[6] = w->height >> 8;
+    const cJSON *variables = cJSON_GetObjectItem(config, "variables");
+    const cJSON *rule = rules_match(variables, key);
     rgb_t color = draw_color(config, page, key, "color", (rgb_t){0, 0, 0});
+    rgb_t text_color = draw_color(NULL, page, key, "label_color", (rgb_t){255, 255, 255});
+    color = draw_color(NULL, NULL, rule, "color", color);
+    text_color = draw_color(NULL, NULL, rule, "label_color", text_color);
     bool ok;
     struct tm t;
     if (shows_clock(key, w)) {
@@ -92,12 +116,12 @@ esp_err_t drawdyn_key(deckd_t *d, const cJSON *config, const cJSON *page, const 
                           t.tm_mday, t.tm_mon + 1, time_color, date_color);
     } else {
         char label[256];
-        placeholders_fill(text_of(key, "label"), cJSON_GetObjectItem(config, "variables"), label, sizeof label);
+        placeholders_fill(text_of(key, "label"), variables, label, sizeof label);
         const char *position = text_of(key, "label_pos");
         const cJSON *size = key ? cJSON_GetObjectItem(key, "label_size") : NULL;
-        uint8_t *icon = load_icon(page_id, w);
-        ok = render_key(buf + PREFIX, w->width, w->height, color, icon, label,
-                        draw_color(NULL, page, key, "label_color", (rgb_t){255, 255, 255}), position[0] ? position : "bottom",
+        uint8_t *icon = rule ? load_icon(page_id, w, "-alt") : NULL;
+        if (!icon) icon = load_icon(page_id, w, "-icon");
+        ok = render_key(buf + PREFIX, w->width, w->height, color, icon, label, text_color, position[0] ? position : "bottom",
                         cJSON_IsNumber(size) ? size->valueint : 100);
         free(icon);
     }
@@ -119,7 +143,9 @@ void drawdyn_request_all(void)
     cJSON *config = config_parse();
     const cJSON *page = config ? config_find_page(config, state.page) : NULL;
     for (int i = 0; page && i < state.key_count; i++) {
-        if (drawdyn_is_dynamic(config_find_key(page, state.keys[i].index), &state.keys[i])) {
+        const cJSON *key = config_find_key(page, state.keys[i].index);
+        const cJSON *rules = key ? cJSON_GetObjectItem(key, "rules") : NULL; /* a key with rules may have to go back */
+        if (cJSON_GetArraySize(rules) > 0 || drawdyn_is_dynamic(config, key, state.page, &state.keys[i])) {
             device_request_redraw((int)state.keys[i].index);
         }
     }

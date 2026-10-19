@@ -14,11 +14,13 @@
 #include "events.h"
 #include "keyfiles.h"
 #include "logbuf.h"
+#include "mqtt.h"
 
 static const char *TAG = "web";
 #define WWW "/www"
 #define MAX_CONFIG 65536
 #define LOG_CHUNK 6144
+#define INFO_MAX 6144
 
 static const struct { const char *ext, *type; } TYPES[] = {
     {".html", "text/html; charset=utf-8"},      {".js", "text/javascript; charset=utf-8"},
@@ -80,10 +82,13 @@ static esp_err_t send_file(httpd_req_t *req)
 
 static esp_err_t api_info(httpd_req_t *req)
 {
-    char body[2560];
-    device_info_json(body, sizeof body);
+    char *body = malloc(INFO_MAX);
+    if (!body) return web_json_error(req, "500 Internal Server Error", "out of memory");
+    device_info_json(body, INFO_MAX);
     httpd_resp_set_type(req, "application/json");
-    return httpd_resp_sendstr(req, body);
+    esp_err_t err = httpd_resp_sendstr(req, body);
+    free(body);
+    return err;
 }
 
 static esp_err_t api_config_get(httpd_req_t *req)
@@ -142,6 +147,7 @@ static esp_err_t api_config_put(httpd_req_t *req)
     cJSON *saved = cJSON_Parse(body);
     if (saved) {
         config_purge_images(saved); /* images of deleted pages */
+        mqtt_configure(saved);      /* topics of the variables */
         device_state_t state;
         device_snapshot(&state);
         draw_request_changes(before, saved, state.page); /* only what looks different */
@@ -205,16 +211,24 @@ static esp_err_t api_log(httpd_req_t *req)
     return err;
 }
 
-/* MQTT is not part of the ESP32 host yet: report it as off. */
+/* GET /api/mqtt: the settings (never the password) and the state; PUT /api/mqtt: new settings. */
 static esp_err_t api_mqtt(httpd_req_t *req)
 {
     if (req->method == HTTP_PUT) {
         REQUIRE_HEADER(req);
-        return web_json_error(req, "501 Not Implemented", "MQTT is not supported by this host yet");
+        char body[512];
+        int n = req->content_len < sizeof body ? httpd_req_recv(req, body, req->content_len) : -1;
+        if (n <= 0) return web_json_error(req, "400 Bad Request", "expected a JSON object");
+        body[n] = 0;
+        const char *problem = mqtt_update(body);
+        if (problem) return web_json_error(req, "400 Bad Request", problem);
     }
+    char *json = mqtt_json();
+    if (!json) return web_json_error(req, "500 Internal Server Error", "out of memory");
     httpd_resp_set_type(req, "application/json");
-    return httpd_resp_sendstr(req, "{\"host\":\"\",\"port\":1883,\"username\":\"\",\"tls\":false,\"client_id\":\"\","
-                                   "\"password_set\":false,\"enabled\":false,\"connected\":false,\"error\":\"\"}");
+    esp_err_t err = httpd_resp_sendstr(req, json);
+    free(json);
+    return err;
 }
 
 /* Everything else below /api that is not built yet. */

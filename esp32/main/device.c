@@ -10,6 +10,7 @@
 #include "actions.h"
 #include "deckd.h"
 #include "draw.h"
+#include "placeholders.h"
 #include "drawdyn.h"
 #include "wallclock.h"
 #include "esp_log.h"
@@ -109,12 +110,22 @@ size_t device_info_json(char *out, size_t size)
         n = append(out, size, n, "%s{\"index\":%u,\"code\":%u,\"x\":%u,\"y\":%u,\"width\":%u,\"height\":%u}", i ? "," : "",
                    s.keys[i].index, s.keys[i].code, s.keys[i].x, s.keys[i].y, s.keys[i].width, s.keys[i].height);
     }
+    char *values = device_values_json();
     n = append(out, size, n,
-               "],\"actions\":[\"bl_down\",\"bl_up\",\"disp_off\",\"disp_on\",\"page\",\"back\"],"
-               "\"brightness\":{\"level\":%d,\"percent\":%d,\"display_on\":%s},\"page\":\"%s\",\"values\":{},"
-               "\"variable_types\":[]}",
-               s.brightness, percent(s.brightness), s.display_on ? "true" : "false", s.page);
+               "],\"actions\":[\"mqtt\",\"bl_down\",\"bl_up\",\"disp_off\",\"disp_on\",\"page\",\"back\"],"
+               "\"brightness\":{\"level\":%d,\"percent\":%d,\"display_on\":%s},\"page\":\"%s\",\"values\":%s,"
+               "\"variable_types\":[\"mqtt\"]}",
+               s.brightness, percent(s.brightness), s.display_on ? "true" : "false", s.page, values ? values : "{}");
+    free(values);
     return n;
+}
+
+char *device_values_json(void)
+{
+    cJSON *config = config_parse();
+    char *json = placeholders_values_json(config ? cJSON_GetObjectItem(config, "variables") : NULL);
+    cJSON_Delete(config);
+    return json;
 }
 
 void device_event_json(const char *name, char *out, size_t size)
@@ -173,7 +184,7 @@ static void publish_key(uint16_t index, bool pressed)
     if (pressed) {
         device_state_t state;
         device_snapshot(&state);
-        actions_run(index, state.page); /* only sets state and flags: the device task acts on them */
+        actions_run(index, state.page, false); /* only sets state and flags: the device task acts on them */
     }
 }
 

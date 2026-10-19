@@ -1,9 +1,11 @@
 #include "events.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "device.h"
+#include "mqtt.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -39,14 +41,27 @@ static void send_all(const char *text)
 
 void events_publish(const char *name, const char *json)
 {
-    char text[256];
-    snprintf(text, sizeof text, "event: %s\ndata: %s\n\n", name, json);
+    size_t size = strlen(name) + strlen(json) + 24;
+    char *text = malloc(size);
+    if (!text) return;
+    snprintf(text, size, "event: %s\ndata: %s\n\n", name, json);
     send_all(text);
+    free(text);
 }
 
 static void keepalive(void *arg)
 {
     send_all(": keepalive\n\n");
+}
+
+/* The current body of the event `name`. free() it. */
+static char *state_json(const char *name)
+{
+    if (strcmp(name, "values") == 0) return device_values_json();
+    if (strcmp(name, "mqtt") == 0) return mqtt_json();
+    char *json = malloc(160);
+    if (json) device_event_json(name, json, 160);
+    return json;
 }
 
 esp_err_t events_handler(httpd_req_t *req)
@@ -69,13 +84,17 @@ esp_err_t events_handler(httpd_req_t *req)
         return ESP_OK;
     }
     s_clients[slot] = copy;
-    /* the state right after connecting: status, brightness, page, values */
-    char json[160], text[300];
-    static const char *const initial[] = {"status", "brightness", "page", "values"};
+    /* the state right after connecting: status, brightness, page, values, mqtt */
+    static const char *const initial[] = {"status", "brightness", "page", "values", "mqtt"};
     for (size_t i = 0; i < sizeof initial / sizeof initial[0]; i++) {
-        device_event_json(initial[i], json, sizeof json);
-        snprintf(text, sizeof text, "event: %s\ndata: %s\n\n", initial[i], json);
-        if (send_to(copy, text) != ESP_OK) {
+        char *json = state_json(initial[i]);
+        size_t size = json ? strlen(json) + 40 : 0;
+        char *text = json ? malloc(size) : NULL;
+        if (text) snprintf(text, size, "event: %s\ndata: %s\n\n", initial[i], json);
+        bool failed = !text || send_to(copy, text) != ESP_OK;
+        free(text);
+        free(json);
+        if (failed) {
             drop(slot);
             break;
         }
