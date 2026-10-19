@@ -20,6 +20,8 @@ extern const uint8_t deckd_end[] ;
  * whether any survived (docs/hardware.md). */
 #define VENDOR "WatcherProcess UlanziDeckKey"
 #define VENDOR_PIDS "echo vendor:$(pidof " VENDOR ")"
+#define LOW_BRIGHTNESS 20
+#define LOW_BRIGHTNESS_STR "20"
 #define STOP_ATTEMPTS 3
 #define START_CHECKS 5
 
@@ -80,6 +82,9 @@ esp_err_t bootstrap_deckd(adb_t *a)
     const size_t size = deckd_end - deckd_start;
     char *out = malloc(512);
     if (!out) return ESP_ERR_NO_MEM;
+    /* Power test: a bright display may pull the 5 V of the OTG port down far enough to kill the link. */
+    ESP_LOGI(TAG, "lowering the backlight to %d", LOW_BRIGHTNESS);
+    adb_exec(a, "shell:echo " LOW_BRIGHTNESS_STR " > /sys/class/backlight/backlight/brightness", out, 512);
     esp_err_t err = stop_vendor(a, out, 512);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "cannot stop the vendor app: %s", out);
