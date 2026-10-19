@@ -26,9 +26,10 @@ from d200_deck.device.protocol import Color, Msg, parse_info
 from d200_deck.errors import ConfigError
 from d200_deck.render.dynamic import DynamicKeys, matched_rule
 from d200_deck.service.host import HostService, ServiceSettings
-from d200_deck.service.mqtt import ERROR_VALUE, MqttService, json_value
+from d200_deck.service.mqtt import ERROR_VALUE, MqttService, PahoTransport, json_value
 
 from .conftest import INFO_PAYLOAD, FakeDeck
+from .mini_broker import MiniBroker
 from .test_service import start, stop, wait_until
 
 
@@ -225,3 +226,27 @@ def test_key_press_publishes_and_incoming_message_redraws(tmp_path: Path, fake_d
     finally:
         stop(service, worker)
     assert FakeTransport.instances[-1].stopped
+
+
+def test_paho_transport_against_a_real_broker() -> None:
+    broker = MiniBroker()
+    got: list[tuple[str, bytes]] = []
+    states: list[tuple[bool, str]] = []
+    broker.inject("home/light", b"ON", retain=True)
+    settings = MqttSettings(host="127.0.0.1", port=broker.port, username="me", password="pw", client_id="deck-test")
+    transport = PahoTransport(settings, lambda t, p: got.append((t, p)), lambda c, e: states.append((c, e)))
+    transport.set_topics({"home/light"})  # chosen before connecting
+    try:
+        transport.start()
+        wait_until(lambda: (True, "") in states and got == [("home/light", b"ON")])  # retained message on subscribe
+        assert b"deck-test" in broker.connects[0] and b"me" in broker.connects[0] and b"pw" in broker.connects[0]
+        broker.inject("home/light", b"OFF")
+        wait_until(lambda: got[-1] == ("home/light", b"OFF"))
+        transport.set_topics({"home/other"})  # a live change subscribes and unsubscribes
+        wait_until(lambda: broker.subscribers("home/other") == 1)
+        assert transport.publish("home/set", "toggle", 1, True) == ""
+        wait_until(lambda: broker.received == [("home/set", "toggle", 1, True)])
+    finally:
+        transport.stop()
+        broker.close()
+    wait_until(lambda: states[-1] == (False, ""))  # a normal disconnect is not an error
