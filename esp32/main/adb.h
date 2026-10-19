@@ -35,9 +35,6 @@ typedef struct {
 /* Handshake after the interface is claimed. */
 esp_err_t adb_connect(adb_t *a);
 
-/* After a transfer error: clears both endpoints and drops buffered data; connect again afterwards. */
-void adb_recover(adb_t *a);
-
 /* Runs a service ("shell:...") and collects what it prints into `out` (NUL terminated, may be NULL)
  * until the stream closes. Old adbd versions return no exit code: judge the output. */
 esp_err_t adb_exec(adb_t *a, const char *service, char *out, size_t cap);

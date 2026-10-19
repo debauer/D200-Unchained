@@ -16,9 +16,10 @@ static const char *TAG = "adb";
 #define ADB_CLASS 0xFF
 #define ADB_SUBCLASS 0x42
 #define ADB_PROTOCOL 0x01
-#define BOOTSTRAP_ATTEMPTS 4
+#define SESSION_ATTEMPTS 5
 
-static volatile bool s_present;
+static volatile bool s_present;  /* ADB interface claimed */
+static volatile bool s_attached; /* a device is on the bus */
 static volatile uint8_t s_new_address;
 static SemaphoreHandle_t s_new_dev;
 static usb_host_client_handle_t s_client;
@@ -44,39 +45,40 @@ static bool find_adb(adb_t *a, const usb_config_desc_t *cfg)
     return a->in_ep && a->out_ep;
 }
 
-static void session(adb_t *a, uint8_t address)
+/* One try: open the device, claim ADB, bootstrap deckd, then hold the link until the device goes. */
+static esp_err_t session(adb_t *a, uint8_t address)
 {
     const usb_device_desc_t *dd;
     const usb_config_desc_t *cfg;
-    if (usb_host_device_open(a->client, address, &a->dev) != ESP_OK) return;
+    esp_err_t result = ESP_FAIL;
+    if (usb_host_device_open(a->client, address, &a->dev) != ESP_OK) return ESP_FAIL;
     usb_host_get_device_descriptor(a->dev, &dd);
     usb_host_get_active_config_descriptor(a->dev, &cfg);
     ESP_LOGI(TAG, "device %04x:%04x", dd->idVendor, dd->idProduct);
     if (find_adb(a, cfg) && usb_host_interface_claim(a->client, a->dev, a->iface, 0) == ESP_OK) {
         s_present = true;
         ESP_LOGI(TAG, "ADB interface %u, endpoints in 0x%02x out 0x%02x", a->iface, a->in_ep, a->out_ep);
-        /* Stopping the vendor app can disturb the USB link for a moment: start over until it holds. */
-        for (int attempt = 1; s_present && attempt <= BOOTSTRAP_ATTEMPTS; attempt++) {
-            if (adb_connect(a) == ESP_OK && bootstrap_deckd(a) == ESP_OK) break;
-            ESP_LOGW(TAG, "bootstrap attempt %d failed, reconnecting", attempt);
-            adb_recover(a);
-            vTaskDelay(pdMS_TO_TICKS(1500));
+        if (adb_connect(a) == ESP_OK && bootstrap_deckd(a) == ESP_OK) {
+            result = ESP_OK;
+            while (s_present) vTaskDelay(pdMS_TO_TICKS(500)); /* the deckd client will live here */
         }
-        while (s_present) vTaskDelay(pdMS_TO_TICKS(500)); /* the deckd client will live here */
         usb_host_interface_release(a->client, a->dev, a->iface);
     } else {
         ESP_LOGW(TAG, "no ADB interface on this device");
     }
     usb_host_device_close(a->client, a->dev);
+    return result;
 }
 
 static void client_event(const usb_host_client_event_msg_t *msg, void *arg)
 {
     if (msg->event == USB_HOST_CLIENT_EVENT_NEW_DEV) {
         s_new_address = msg->new_dev.address;
+        s_attached = true;
         xSemaphoreGive(s_new_dev);
     } else if (msg->event == USB_HOST_CLIENT_EVENT_DEV_GONE) {
         s_present = false;
+        s_attached = false;
         ESP_LOGW(TAG, "device removed");
     }
 }
@@ -100,7 +102,13 @@ static void adb_task(void *arg)
     a->client = s_client;
     for (;;) {
         xSemaphoreTake(s_new_dev, portMAX_DELAY);
-        session(a, s_new_address);
+        /* A failed try (e.g. the link dies when the vendor app is stopped) starts over with a fresh open. */
+        for (int attempt = 1; s_attached && attempt <= SESSION_ATTEMPTS; attempt++) {
+            if (session(a, s_new_address) == ESP_OK) break;
+            ESP_LOGW(TAG, "attempt %d failed, opening the device again", attempt);
+            s_present = false;
+            vTaskDelay(pdMS_TO_TICKS(2000));
+        }
     }
 }
 

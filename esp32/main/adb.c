@@ -92,13 +92,6 @@ esp_err_t adb_recv_msg(adb_t *a, adb_msg_t *m)
     return m->length ? rx_read(a, a->buf, m->length) : ESP_OK;
 }
 
-void adb_recover(adb_t *a)
-{
-    usb_host_endpoint_clear(a->dev, a->in_ep);
-    usb_host_endpoint_clear(a->dev, a->out_ep);
-    a->rx_pos = a->rx_len = 0;
-}
-
 esp_err_t adb_connect(adb_t *a)
 {
     static const char banner[] = "host::";

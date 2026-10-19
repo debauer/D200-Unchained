@@ -19,8 +19,7 @@ extern const uint8_t deckd_end[] ;
 /* The vendor app and its watcher restart each other: freeze both, kill both, then pidof tells
  * whether any survived (docs/hardware.md). */
 #define VENDOR "WatcherProcess UlanziDeckKey"
-#define STOP_VENDOR \
-    "killall -STOP " VENDOR " 2>/dev/null; killall -KILL " VENDOR " 2>/dev/null; sleep 1; echo vendor:$(pidof " VENDOR ")"
+#define VENDOR_PIDS "echo vendor:$(pidof " VENDOR ")"
 #define STOP_ATTEMPTS 3
 #define START_CHECKS 5
 
@@ -32,18 +31,33 @@ static bool deckd_listening(adb_t *a, char *out, size_t cap)
     return strstr(out, needle) != NULL;
 }
 
+/* Pids the vendor app still has: the text after "vendor:" (empty when it is gone). */
+static const char *vendor_pids(const char *out)
+{
+    const char *p = strstr(out, "vendor:");
+    if (!p) return NULL;
+    p += strlen("vendor:");
+    while (*p == ' ' || *p == '\n' || *p == '\r') p++;
+    return p;
+}
+
+/* Step by step, each logged: if the USB link dies on one of them, the log shows which. */
 static esp_err_t stop_vendor(adb_t *a, char *out, size_t cap)
 {
     for (int i = 0; i < STOP_ATTEMPTS; i++) {
-        esp_err_t err = adb_exec(a, "shell:" STOP_VENDOR, out, cap);
-        if (err != ESP_OK) return err;
-        const char *v = strstr(out, "vendor:");
-        if (v) {
-            const char *pids = v + strlen("vendor:");
-            while (*pids == ' ' || *pids == '\n' || *pids == '\r') pids++;
-            if (!*pids) return ESP_OK;
-            ESP_LOGW(TAG, "vendor app still running (pids %s), stopping it again", pids);
+        esp_err_t err = adb_exec(a, "shell:" VENDOR_PIDS, out, cap);
+        const char *pids = err == ESP_OK ? vendor_pids(out) : NULL;
+        if (!pids) return ESP_FAIL;
+        if (!*pids) return ESP_OK;
+        ESP_LOGI(TAG, "vendor app running (pids %s): freezing", pids);
+        if (adb_exec(a, "shell:killall -STOP " VENDOR " 2>/dev/null; " VENDOR_PIDS, out, cap) != ESP_OK) return ESP_FAIL;
+        ESP_LOGI(TAG, "frozen, killing");
+        if (adb_exec(a, "shell:killall -KILL " VENDOR " 2>/dev/null; sleep 1; " VENDOR_PIDS, out, cap) != ESP_OK) {
+            return ESP_FAIL;
         }
+        pids = vendor_pids(out);
+        if (pids && !*pids) return ESP_OK;
+        ESP_LOGW(TAG, "vendor app still running (pids %s), stopping it again", pids ? pids : "?");
     }
     return ESP_FAIL;
 }
