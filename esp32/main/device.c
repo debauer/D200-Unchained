@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cJSON.h"
+#include "config.h"
 #include "deckd.h"
 #include "esp_log.h"
 #include "events.h"
@@ -18,6 +20,12 @@ static const char *TAG = "device";
 
 static device_state_t s_state = {.brightness = START_BRIGHTNESS, .display_on = true, .page = "root"};
 static SemaphoreHandle_t s_lock;
+static volatile bool s_redraw = true;
+
+void device_request_redraw(void)
+{
+    s_redraw = true;
+}
 
 void device_init(void)
 {
@@ -117,6 +125,65 @@ static esp_err_t read_info(const uint8_t *p, size_t n)
     return ESP_OK;
 }
 
+/* "rrggbb" -> r, g, b; false when `text` is not a colour. */
+static bool parse_color(const cJSON *item, uint8_t rgb[3])
+{
+    if (!cJSON_IsString(item) || strlen(item->valuestring) != 6) return false;
+    char *end;
+    unsigned long v = strtoul(item->valuestring, &end, 16);
+    if (*end) return false;
+    rgb[0] = v >> 16;
+    rgb[1] = v >> 8;
+    rgb[2] = v;
+    return true;
+}
+
+static const cJSON *page_by_id(const cJSON *config, const char *id)
+{
+    const cJSON *page;
+    cJSON_ArrayForEach(page, cJSON_GetObjectItem(config, "pages")) {
+        const cJSON *pid = cJSON_GetObjectItem(page, "id");
+        if (cJSON_IsString(pid) && strcmp(pid->valuestring, id) == 0) return page;
+    }
+    return NULL;
+}
+
+static const cJSON *key_by_index(const cJSON *page, unsigned index)
+{
+    const cJSON *key;
+    cJSON_ArrayForEach(key, cJSON_GetObjectItem(page, "keys")) {
+        const cJSON *i = cJSON_GetObjectItem(key, "index");
+        if (cJSON_IsNumber(i) && (unsigned)i->valueint == index) return key;
+    }
+    return NULL;
+}
+
+/* Clears the screen and fills every key with its colour: the key's own, else the page's, else `background`.
+ * Text and images follow with the renderer. */
+static esp_err_t draw_colors(deckd_t *d, const device_state_t *state)
+{
+    size_t length;
+    char *text = config_load(&length);
+    cJSON *config = text ? cJSON_Parse(text) : NULL;
+    free(text);
+    uint8_t background[3] = {0, 0, 0}, color[3];
+    if (config) parse_color(cJSON_GetObjectItem(config, "background"), background);
+    const cJSON *page = config ? page_by_id(config, state->page) : NULL;
+    uint8_t type, reply[DECKD_REPLY_MAX];
+    size_t n;
+    esp_err_t err = deckd_request(d, DECKD_CLEAR, background, 3, &type, reply, sizeof reply, &n);
+    for (int i = 0; err == ESP_OK && i < state->key_count; i++) {
+        memcpy(color, background, 3);
+        if (page) parse_color(cJSON_GetObjectItem(page, "color"), color);
+        const cJSON *key = page ? key_by_index(page, state->keys[i].index) : NULL;
+        if (key) parse_color(cJSON_GetObjectItem(key, "color"), color);
+        uint8_t payload[5] = {state->keys[i].index, state->keys[i].index >> 8, color[0], color[1], color[2]};
+        err = deckd_request(d, DECKD_FILL_KEY, payload, sizeof payload, &type, reply, sizeof reply, &n);
+    }
+    cJSON_Delete(config);
+    return err;
+}
+
 esp_err_t device_run(adb_t *a)
 {
     deckd_t *d = malloc(sizeof *d);
@@ -142,7 +209,15 @@ esp_err_t device_run(adb_t *a)
     /* No long wait for events: the IDF USB host does not enforce transfer timeouts, and one IN transfer
      * pending for seconds failed with a WiFi running. A ping every PING_MS keeps every transfer short; key
      * events arrive between the replies. */
+    s_redraw = true; /* a fresh connection: the screen still shows whatever was there before */
     while (usb_adb_device_present()) {
+        if (s_redraw) {
+            s_redraw = false;
+            device_state_t state;
+            device_snapshot(&state);
+            err = draw_colors(d, &state);
+            if (err != ESP_OK) break;
+        }
         err = deckd_request(d, DECKD_PING, NULL, 0, &type, frame, sizeof frame, &n);
         if (err != ESP_OK) break;
         vTaskDelay(pdMS_TO_TICKS(PING_MS));

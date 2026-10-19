@@ -32,6 +32,9 @@ size_t device_info_json(char *out, size_t size);
 /* Body of the SSE event `name` ("status", "brightness", "page", "values") in its current state. */
 void device_event_json(const char *name, char *out, size_t size);
 
+/* The configuration changed: the device task redraws the keys at its next turn. */
+void device_request_redraw(void);
+
 /* Runs against a bootstrapped D200: hello, initial brightness, then forwards key presses as events until the
  * link breaks. Returns when it does. */
 esp_err_t device_run(adb_t *a);

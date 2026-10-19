@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 
 #include "cJSON.h"
+#include "config.h"
 #include "device.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -14,11 +15,8 @@
 
 static const char *TAG = "web";
 #define WWW "/www"
-#define CONFIG_FILE "/storage/config.json"
-#define CONFIG_TMP "/storage/config.tmp"
 #define MAX_CONFIG 65536
 #define LOG_CHUNK 6144
-#define DEFAULT_CONFIG "{\"version\":2,\"pages\":[{\"id\":\"root\",\"name\":\"Default\",\"parent\":null,\"keys\":[]}]}"
 
 static const struct { const char *ext, *type; } TYPES[] = {
     {".html", "text/html; charset=utf-8"},      {".js", "text/javascript; charset=utf-8"},
@@ -88,15 +86,12 @@ static esp_err_t api_info(httpd_req_t *req)
 
 static esp_err_t api_config_get(httpd_req_t *req)
 {
+    size_t length;
+    char *text = config_load(&length);
+    if (!text) return json_error(req, "500 Internal Server Error", "out of memory");
     httpd_resp_set_type(req, "application/json");
-    FILE *f = fopen(CONFIG_FILE, "rb");
-    if (!f) return httpd_resp_sendstr(req, DEFAULT_CONFIG);
-    char buf[1024];
-    size_t n;
-    esp_err_t err = ESP_OK;
-    while (err == ESP_OK && (n = fread(buf, 1, sizeof buf, f)) > 0) err = httpd_resp_send_chunk(req, buf, n);
-    fclose(f);
-    if (err == ESP_OK) httpd_resp_send_chunk(req, NULL, 0);
+    esp_err_t err = httpd_resp_send(req, text, length);
+    free(text);
     return err;
 }
 
@@ -135,13 +130,12 @@ static esp_err_t api_config_put(httpd_req_t *req)
         free(body);
         return json_error(req, "400 Bad Request", problem);
     }
-    FILE *f = fopen(CONFIG_TMP, "wb");
-    bool ok = f && fwrite(body, 1, got, f) == got && fclose(f) == 0 && rename(CONFIG_TMP, CONFIG_FILE) == 0;
-    if (!ok) {
+    if (!config_store(body, got)) {
         ESP_LOGE(TAG, "cannot store the config");
         free(body);
         return json_error(req, "500 Internal Server Error", "cannot store the config");
     }
+    device_request_redraw();
     httpd_resp_set_type(req, "application/json");
     esp_err_t err = httpd_resp_send(req, body, got);
     free(body);
