@@ -16,6 +16,11 @@ rules with the second image. The broker settings are stored in plain text in the
 flash is not encrypted); the web API never returns the password. Not done: variables of type `command` (no source on
 this host, they show `?`), `http`.
 
+Key images go to `deckd` run-length coded (protocol 5, `format 2`; flat areas and text shrink by a factor of 10 to 30,
+photos stay as they are), and the USB transfers are reused instead of allocated per block. The menu item
+`D200_ADB_ONE_TRANSFER` additionally sends header and data of an ADB message as one transfer (off by default: try it,
+and turn it off again if the D200 stops answering).
+
 ## Hardware
 
 ESP32-S3 devkit with two USB-C ports: **COM** (USB-UART, to the PC for flashing and the log) and

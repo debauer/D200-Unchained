@@ -11,5 +11,7 @@ gcc "${flags[@]}" -o "$out/placeholders" tests/native/placeholders.c main/placeh
 gcc "${flags[@]}" -o "$out/mqtt" tests/native/mqtt.c main/mqttjson.c main/mqttsettings.c "$cjson/cJSON.c"
 gcc "${flags[@]}" -O2 -o "$out/render" tests/native/render.c main/render.c main/glyphs.c -lm
 "$out/placeholders"
+gcc "${flags[@]}" -O2 -o "$out/rle" tests/native/rle.c main/rle.c
+"$out/rle"
 "$out/mqtt"
 "$out/render" main/fonts/chakra-petch-700.ttf main/fonts/chakra-petch-500.ttf

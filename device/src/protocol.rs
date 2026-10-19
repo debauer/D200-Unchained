@@ -4,8 +4,9 @@ use std::io::{self, Read, Write};
 
 use crate::canvas::Rgb;
 use crate::layout::Key;
+use crate::rle;
 
-pub const VERSION: u16 = 4;
+pub const VERSION: u16 = 5;
 pub const PORT: u16 = 7200;
 pub const MAX_PAYLOAD: usize = 4 << 20;
 
@@ -33,7 +34,7 @@ pub enum PixelFormat {
 impl PixelFormat {
     fn from_u8(v: u8) -> Result<Self, String> {
         match v {
-            0 => Ok(PixelFormat::Rgb565),
+            0 | 2 => Ok(PixelFormat::Rgb565), // 2: run-length coded, decoded when the command is parsed
             1 => Ok(PixelFormat::Rgb888),
             _ => Err(format!("unknown pixel format {v}")),
         }
@@ -99,10 +100,14 @@ pub fn parse_command(ty: u8, p: &[u8]) -> Result<Command, String> {
             let (w, h) = (u16_at(p, 3) as usize, u16_at(p, 5) as usize);
             let pixels = &p[7..];
             let expected = w * h * format.bytes_per_pixel();
-            if pixels.len() != expected {
+            let pixels = if p[2] == 2 {
+                rle::decode(pixels, w * h).map_err(|e| format!("SET_KEY_IMAGE: {e}"))?
+            } else if pixels.len() == expected {
+                pixels.to_vec()
+            } else {
                 return Err(format!("SET_KEY_IMAGE: {w}x{h} needs {expected} pixel bytes, got {}", pixels.len()));
-            }
-            Ok(Command::SetKeyImage { index: u16_at(p, 0), format, w, h, pixels: pixels.to_vec() })
+            };
+            Ok(Command::SetKeyImage { index: u16_at(p, 0), format, w, h, pixels })
         }
         _ => Err(format!("unknown message type 0x{ty:02x}")),
     }
@@ -185,6 +190,19 @@ mod tests {
         assert_eq!(format.pixel(&pixels, 1), Rgb(0, 255, 0));
         p.pop();
         assert!(parse_command(msg::SET_KEY_IMAGE, &p).unwrap_err().contains("needs 4 pixel bytes"));
+    }
+
+    #[test]
+    fn parses_run_length_coded_key_image() {
+        let mut p = vec![3, 0, 2, 3, 0, 1, 0]; // index 3, format 2, 3x1
+        p.extend_from_slice(&[128, 0x00, 0xF8, 0, 0xE0, 0x07]); // red twice, one green
+        let Command::SetKeyImage { format, w, h, pixels, .. } = parse_command(msg::SET_KEY_IMAGE, &p).unwrap() else {
+            panic!()
+        };
+        assert_eq!((format, w, h), (PixelFormat::Rgb565, 3, 1));
+        assert_eq!(pixels, [0x00, 0xF8, 0x00, 0xF8, 0xE0, 0x07]);
+        p.truncate(p.len() - 3); // only two of three pixels
+        assert!(parse_command(msg::SET_KEY_IMAGE, &p).unwrap_err().contains("2 of the 3 pixels"));
     }
 
     #[test]

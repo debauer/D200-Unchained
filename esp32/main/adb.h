@@ -5,9 +5,12 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "usb/usb_host.h"
 
 #define ADB_MAX_DATA 4096
+#define ADB_HEADER_SIZE 24
 #define ADB_RX_CHUNK 1024 /* multiple of the bulk packet size (64 full speed, 512 high speed) */
 
 typedef struct {
@@ -22,6 +25,8 @@ typedef struct {
     uint32_t reply_len;         /* its length field, valid once `got_reply` */
     int got_reply;
     bool broken;               /* a transfer failed since the last adb_connect */
+    usb_transfer_t *out_x, *in_x; /* reused for every bulk transfer, allocated by the first one */
+    SemaphoreHandle_t done;       /* given by the transfer callback */
 } adb_t;
 
 typedef struct {

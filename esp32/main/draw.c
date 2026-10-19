@@ -37,16 +37,23 @@ static void log_refusal(const char *what, uint8_t type, const uint8_t *reply, si
     ESP_LOGE(TAG, "deckd answered %s with 0x%02x: %.*s", what, type, (int)(type == DECKD_ERROR ? n : 0), reply);
 }
 
-/* The stored image of `key` if it is there and has exactly the size of the window. */
-static FILE *open_image(const cJSON *key, const device_key_t *window)
+/* The stored image of `key` if it is there and has exactly the size of the window: its pixels, free() them. */
+static uint8_t *load_image(const cJSON *key, const device_key_t *window)
 {
     const cJSON *name = key ? cJSON_GetObjectItem(key, "image") : NULL;
     if (!cJSON_IsString(name) || strchr(name->valuestring, '/')) return NULL;
     char path[sizeof IMAGE_DIR + 260];
     snprintf(path, sizeof path, IMAGE_DIR "/%s", name->valuestring);
+    size_t size = (size_t)window->width * window->height * 2;
     struct stat st;
-    if (stat(path, &st) != 0 || st.st_size != (off_t)window->width * window->height * 2) return NULL;
-    return fopen(path, "rb");
+    FILE *f = stat(path, &st) == 0 && st.st_size == (off_t)size ? fopen(path, "rb") : NULL;
+    uint8_t *pixels = f ? malloc(size) : NULL;
+    if (pixels && fread(pixels, 1, size, f) != size) {
+        free(pixels);
+        pixels = NULL;
+    }
+    if (f) fclose(f);
+    return pixels;
 }
 
 esp_err_t draw_page(deckd_t *d, const device_state_t *state, uint32_t keys, bool clear)
@@ -70,10 +77,10 @@ esp_err_t draw_page(deckd_t *d, const device_state_t *state, uint32_t keys, bool
             err = drawdyn_key(d, config, page, state->page, key, w);
             continue;
         }
-        FILE *f = open_image(key, w);
-        if (f) {
-            err = deckd_set_key_image_file(d, w->index, w->width, w->height, f, &type, reply, sizeof reply, &n);
-            fclose(f);
+        uint8_t *pixels = load_image(key, w);
+        if (pixels) {
+            err = deckd_set_key_image(d, w->index, w->width, w->height, pixels, &type, reply, sizeof reply, &n);
+            free(pixels);
             if (err == ESP_OK && type != DECKD_OK) log_refusal("key image", type, reply, n);
             images++;
             continue;

@@ -20,33 +20,46 @@ static void xfer_done(usb_transfer_t *x)
     xSemaphoreGive((SemaphoreHandle_t)x->context);
 }
 
-static esp_err_t bulk(adb_t *a, uint8_t ep, void *data, size_t len, size_t *actual)
+/* One transfer object per direction and one semaphore, kept for the whole run: allocating them per transfer
+ * churned the heap three times per 4 KB block. Only one transfer is in flight at a time. */
+static esp_err_t transfers_alloc(adb_t *a)
 {
-    usb_transfer_t *x;
-    esp_err_t err = usb_host_transfer_alloc(len, 0, &x);
+    if (!a->done) a->done = xSemaphoreCreateBinary();
+    if (!a->done) return ESP_ERR_NO_MEM;
+    esp_err_t err = ESP_OK;
+    if (!a->out_x) err = usb_host_transfer_alloc(ADB_HEADER_SIZE + ADB_MAX_DATA, 0, &a->out_x);
+    if (err == ESP_OK && !a->in_x) err = usb_host_transfer_alloc(ADB_RX_CHUNK, 0, &a->in_x);
+    return err;
+}
+
+/* Sends `head` (may be empty) and `data` as one OUT transfer, or receives up to `len` bytes into `data`. */
+static esp_err_t bulk(adb_t *a, uint8_t ep, const void *head, size_t head_len, void *data, size_t len, size_t *actual)
+{
+    esp_err_t err = transfers_alloc(a);
     if (err != ESP_OK) return err;
-    SemaphoreHandle_t done = xSemaphoreCreateBinary();
-    if (!(ep & 0x80)) memcpy(x->data_buffer, data, len);
+    usb_transfer_t *x = (ep & 0x80) ? a->in_x : a->out_x;
+    if (!(ep & 0x80)) {
+        if (head_len) memcpy(x->data_buffer, head, head_len);
+        if (len) memcpy(x->data_buffer + head_len, data, len);
+    }
     x->device_handle = a->dev;
     x->bEndpointAddress = ep;
-    x->num_bytes = len;
+    x->num_bytes = head_len + len;
     x->timeout_ms = XFER_TIMEOUT_MS; /* not enforced by the IDF USB host (documented as unsupported) */
     x->callback = xfer_done;
-    x->context = done;
+    x->context = a->done;
     err = usb_host_transfer_submit(x);
     if (err == ESP_OK) {
-        xSemaphoreTake(done, portMAX_DELAY);
+        xSemaphoreTake(a->done, portMAX_DELAY);
         if (x->status != USB_TRANSFER_STATUS_COMPLETED) {
             ESP_LOGW(TAG, "transfer on ep 0x%02x: status %d (%u of %u bytes)", ep, x->status,
-                     (unsigned)x->actual_num_bytes, (unsigned)len);
+                     (unsigned)x->actual_num_bytes, (unsigned)(head_len + len));
             err = ESP_FAIL;
         } else if (ep & 0x80) {
             memcpy(data, x->data_buffer, x->actual_num_bytes);
             *actual = x->actual_num_bytes;
         }
     }
-    vSemaphoreDelete(done);
-    usb_host_transfer_free(x);
     if (err != ESP_OK) a->broken = true;
     return err;
 }
@@ -57,7 +70,7 @@ static esp_err_t rx_read(adb_t *a, uint8_t *dst, size_t n)
         if (a->rx_pos == a->rx_len) {
             a->rx_pos = 0;
             a->rx_len = 0;
-            esp_err_t err = bulk(a, a->in_ep, a->rx, ADB_RX_CHUNK, &a->rx_len);
+            esp_err_t err = bulk(a, a->in_ep, NULL, 0, a->rx, ADB_RX_CHUNK, &a->rx_len);
             if (err != ESP_OK) return err;
         }
         size_t take = a->rx_len - a->rx_pos < n ? a->rx_len - a->rx_pos : n;
@@ -105,9 +118,13 @@ esp_err_t adb_send_msg(adb_t *a, uint32_t cmd, uint32_t arg0, uint32_t arg1, con
     for (size_t i = 0; i < len; i++) sum += ((const uint8_t *)data)[i]; /* old adbd verifies it */
     adb_msg_t m = {cmd, arg0, arg1, (uint32_t)len, sum, cmd ^ 0xffffffff};
     trace("tx", &m);
-    esp_err_t err = bulk(a, a->out_ep, &m, sizeof m, NULL);
-    if (err == ESP_OK && len) err = bulk(a, a->out_ep, (void *)data, len, NULL);
+#ifdef CONFIG_D200_ADB_ONE_TRANSFER
+    return bulk(a, a->out_ep, &m, sizeof m, (void *)data, len, NULL);
+#else
+    esp_err_t err = bulk(a, a->out_ep, &m, sizeof m, NULL, 0, NULL);
+    if (err == ESP_OK && len) err = bulk(a, a->out_ep, NULL, 0, (void *)data, len, NULL);
     return err;
+#endif
 }
 
 /* Reads one message; its payload lands in a->buf. */

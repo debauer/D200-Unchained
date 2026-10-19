@@ -5,6 +5,7 @@ pub mod font;
 pub mod input;
 pub mod layout;
 pub mod protocol;
+pub mod rle;
 pub mod screen;
 pub mod server;
 pub mod sysinfo;

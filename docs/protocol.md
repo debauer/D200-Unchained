@@ -1,4 +1,4 @@
-# deckd protocol (version 4)
+# deckd protocol (version 5)
 
 Binary protocol between a host (PC, Raspberry Pi, microcontroller) and the `deckd`
 service on the D200. Goal: simple enough for an ESP32.
@@ -56,7 +56,10 @@ Maximum payload: 4 MiB. Larger frames close the connection.
   centred in it; the border is left unchanged.
   - `format 0` = RGB565, 2 bytes per pixel (u16 LE: `rrrrrggg gggbbbbb`)
   - `format 1` = RGB888, 3 bytes per pixel (R, G, B)
-  - Pixels row by row from the top left, `len(pixels) = w * h * bpp`.
+  - `format 2` = RGB565, run-length coded (much smaller for flat areas and text). A control byte `c`:
+    `0..=127` is followed by `c + 1` pixels that are copied; `128..=255` is followed by one pixel that is
+    repeated `c - 126` times (2..129). The runs must add up to exactly `w * h` pixels.
+  - Pixels row by row from the top left, `len(pixels) = w * h * bpp` (formats 0 and 1).
 - Unknown `index` or invalid payload -> `ERROR`.
 
 ## Replies and events (device -> host)
@@ -72,7 +75,7 @@ Maximum payload: 4 MiB. Larger frames close the connection.
 `INFO`:
 
 ```
-u16 protocol_version   (4)
+u16 protocol_version   (5)
 u16 screen_width       (1280)
 u16 screen_height      (720)
 u8  key_count          (14)
@@ -103,6 +106,7 @@ Facts that cannot be read are missing; ignore unknown lines. Known keys:
 
 | Version | Change |
 |---|---|
+| 5 | `SET_KEY_IMAGE` format 2 (run-length coded RGB565) |
 | 4 | Several clients at once, events to all (before: a new connection replaced the old one) |
 | 3 | `SYSINFO` |
 | 2 | Keys by index instead of key code, `INFO` contains index and code |

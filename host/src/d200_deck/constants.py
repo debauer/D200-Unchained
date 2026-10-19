@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-PROTOCOL_VERSION = 4
+PROTOCOL_VERSION = 5
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 7200
 DEFAULT_TIMEOUT_S = 5.0

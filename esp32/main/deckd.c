@@ -5,10 +5,14 @@
 
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "rle.h"
 
 static const char *TAG = "deckd";
 #define LOCAL_ID 2
 #define FRAME_HEADER 5
+#define IMAGE_HEADER 7 /* SET_KEY_IMAGE: u16 index, u8 format, u16 w, u16 h */
+#define FORMAT_RGB565 0
+#define FORMAT_RLE 2
 
 static void put_u16(uint8_t *p, unsigned v) { p[0] = v; p[1] = v >> 8; }
 static void put_u32(uint8_t *p, uint32_t v) { p[0] = v; p[1] = v >> 8; p[2] = v >> 16; p[3] = v >> 24; }
@@ -111,25 +115,26 @@ static esp_err_t await_reply(deckd_t *d, uint8_t *reply_type, uint8_t *reply, si
     return err;
 }
 
-esp_err_t deckd_set_key_image_file(deckd_t *d, unsigned index, unsigned w, unsigned h, FILE *f, uint8_t *reply_type,
-                                   uint8_t *reply, size_t cap, size_t *reply_len)
+esp_err_t deckd_set_key_image(deckd_t *d, unsigned index, unsigned w, unsigned h, const uint8_t *pixels,
+                              uint8_t *reply_type, uint8_t *reply, size_t cap, size_t *reply_len)
 {
-    const size_t pixels = (size_t)w * h * 2;
-    d->tx[0] = DECKD_SET_KEY_IMAGE;
-    put_u32(d->tx + 1, 7 + pixels);
-    put_u16(d->tx + FRAME_HEADER, index);
-    d->tx[FRAME_HEADER + 2] = 0; /* RGB565 */
-    put_u16(d->tx + FRAME_HEADER + 3, w);
-    put_u16(d->tx + FRAME_HEADER + 5, h);
-    size_t used = FRAME_HEADER + 7, sent = 0;
-    esp_err_t err = ESP_OK;
-    while (err == ESP_OK && sent < pixels) {
-        size_t want = ADB_MAX_DATA - used < pixels - sent ? ADB_MAX_DATA - used : pixels - sent;
-        if (fread(d->tx + used, 1, want, f) != want) return ESP_FAIL; /* the file is shorter than announced */
-        err = write_chunk(d, d->tx, used + want);
-        sent += want;
-        used = 0;
+    const size_t count = (size_t)w * h, raw = count * 2;
+    uint8_t *payload = malloc(IMAGE_HEADER + RLE_MAX_SIZE(count));
+    if (!payload) return ESP_ERR_NO_MEM;
+    put_u16(payload, index);
+    put_u16(payload + 3, w);
+    put_u16(payload + 5, h);
+    size_t coded = rle_encode(pixels, count, payload + IMAGE_HEADER);
+    payload[2] = FORMAT_RLE;
+    size_t size = coded;
+    if (coded >= raw) { /* noise (a photo): the plain form is not bigger */
+        payload[2] = FORMAT_RGB565;
+        memcpy(payload + IMAGE_HEADER, pixels, raw);
+        size = raw;
     }
+    ESP_LOGD(TAG, "key %u: %u of %u bytes", index, (unsigned)size, (unsigned)raw);
+    esp_err_t err = send_frame(d, DECKD_SET_KEY_IMAGE, payload, IMAGE_HEADER + size);
+    free(payload);
     return err == ESP_OK ? await_reply(d, reply_type, reply, cap, reply_len) : err;
 }
 

@@ -15,6 +15,14 @@ menu "D200 host"
             Logs every ADB message with its time, dumps the D200's dmesg once the bootstrap ran and turns
             on the ESP-IDF USB host logs (needs "Maximum log verbosity: Debug", see sdkconfig.defaults).
 
+    config D200_ADB_ONE_TRANSFER
+        bool "Send an ADB message (header and data) as one USB transfer"
+        default n
+        help
+            Saves one of three USB transfers per 4 KB block (about a fifth faster). adb itself sends header and
+            data separately, and some adbd versions lose the data when the header is read out of a larger
+            transfer: try it, and if the D200 stops answering turn it off again.
+
     config D200_SELFTEST
         bool "Draw test images on key 0 at every connection (timing log)"
         default n

@@ -14,7 +14,6 @@
 #include "wallclock.h"
 
 static const char *TAG = "drawdyn";
-#define PREFIX 7 /* SET_KEY_IMAGE: u16 index, u8 format, u16 w, u16 h */
 #define CYAN ((rgb_t){0, 240, 255})
 #define MAGENTA ((rgb_t){255, 43, 214})
 
@@ -89,15 +88,8 @@ esp_err_t drawdyn_key(deckd_t *d, const cJSON *config, const cJSON *page, const 
         fonts_ready = true;
     }
     const size_t pixels = (size_t)w->width * w->height * 2;
-    uint8_t *buf = malloc(PREFIX + pixels);
+    uint8_t *buf = malloc(pixels);
     if (!buf) return ESP_ERR_NO_MEM;
-    buf[0] = w->index;
-    buf[1] = w->index >> 8;
-    buf[2] = 0; /* RGB565 */
-    buf[3] = w->width;
-    buf[4] = w->width >> 8;
-    buf[5] = w->height;
-    buf[6] = w->height >> 8;
     const cJSON *variables = cJSON_GetObjectItem(config, "variables");
     const cJSON *rule = rules_match(variables, key);
     rgb_t color = draw_color(config, page, key, "color", (rgb_t){0, 0, 0});
@@ -112,7 +104,7 @@ esp_err_t drawdyn_key(deckd_t *d, const cJSON *config, const cJSON *page, const 
                                ? draw_color(NULL, NULL, key, "label_color", CYAN)
                                : draw_color(NULL, page, NULL, "label_color", CYAN);
         rgb_t date_color = draw_color(NULL, page, NULL, "accent_color", MAGENTA);
-        ok = render_clock(buf + PREFIX, w->width, w->height, color, have ? t.tm_hour : -1, t.tm_min, (t.tm_wday + 6) % 7,
+        ok = render_clock(buf, w->width, w->height, color, have ? t.tm_hour : -1, t.tm_min, (t.tm_wday + 6) % 7,
                           t.tm_mday, t.tm_mon + 1, time_color, date_color);
     } else {
         char label[256];
@@ -121,7 +113,7 @@ esp_err_t drawdyn_key(deckd_t *d, const cJSON *config, const cJSON *page, const 
         const cJSON *size = key ? cJSON_GetObjectItem(key, "label_size") : NULL;
         uint8_t *icon = rule ? load_icon(page_id, w, "-alt") : NULL;
         if (!icon) icon = load_icon(page_id, w, "-icon");
-        ok = render_key(buf + PREFIX, w->width, w->height, color, icon, label, text_color, position[0] ? position : "bottom",
+        ok = render_key(buf, w->width, w->height, color, icon, label, text_color, position[0] ? position : "bottom",
                         cJSON_IsNumber(size) ? size->valueint : 100);
         free(icon);
     }
@@ -129,7 +121,7 @@ esp_err_t drawdyn_key(deckd_t *d, const cJSON *config, const cJSON *page, const 
     if (ok) {
         uint8_t type, reply[DECKD_REPLY_MAX];
         size_t n;
-        err = deckd_request(d, DECKD_SET_KEY_IMAGE, buf, PREFIX + pixels, &type, reply, sizeof reply, &n);
+        err = deckd_set_key_image(d, w->index, w->width, w->height, buf, &type, reply, sizeof reply, &n);
         if (err == ESP_OK && type != DECKD_OK) ESP_LOGE(TAG, "deckd refused key %u (0x%02x)", w->index, type);
     }
     free(buf);
