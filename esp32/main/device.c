@@ -125,6 +125,11 @@ static esp_err_t read_info(const uint8_t *p, size_t n)
     return ESP_OK;
 }
 
+static void log_refusal(const char *what, uint8_t type, const uint8_t *reply, size_t n)
+{
+    ESP_LOGE(TAG, "deckd answered %s with 0x%02x: %.*s", what, type, (int)(type == DECKD_ERROR ? n : 0), reply);
+}
+
 /* "rrggbb" -> r, g, b; false when `text` is not a colour. */
 static bool parse_color(const cJSON *item, uint8_t rgb[3])
 {
@@ -172,6 +177,7 @@ static esp_err_t draw_colors(deckd_t *d, const device_state_t *state)
     uint8_t type, reply[DECKD_REPLY_MAX];
     size_t n;
     esp_err_t err = deckd_request(d, DECKD_CLEAR, background, 3, &type, reply, sizeof reply, &n);
+    if (err == ESP_OK && type != DECKD_OK) log_refusal("clear", type, reply, n);
     for (int i = 0; err == ESP_OK && i < state->key_count; i++) {
         memcpy(color, background, 3);
         if (page) parse_color(cJSON_GetObjectItem(page, "color"), color);
@@ -179,7 +185,9 @@ static esp_err_t draw_colors(deckd_t *d, const device_state_t *state)
         if (key) parse_color(cJSON_GetObjectItem(key, "color"), color);
         uint8_t payload[5] = {state->keys[i].index, state->keys[i].index >> 8, color[0], color[1], color[2]};
         err = deckd_request(d, DECKD_FILL_KEY, payload, sizeof payload, &type, reply, sizeof reply, &n);
+        if (err == ESP_OK && type != DECKD_OK) log_refusal("fill key", type, reply, n);
     }
+    ESP_LOGI(TAG, "drew %d key colours", state->key_count);
     cJSON_Delete(config);
     return err;
 }

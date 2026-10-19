@@ -83,6 +83,23 @@ static void dump_device_log(adb_t *a)
     free(text);
 }
 
+#ifdef CONFIG_D200_DEBUG
+/* What runs on the D200 a moment after the bootstrap, and what deckd says: if something else keeps painting
+ * the screen, it shows up here. */
+static void diagnose(adb_t *a)
+{
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    char *text = malloc(3072);
+    if (!text) return;
+    if (adb_exec(a, "shell:ps 2>&1 | head -n 40; echo ---deckd.log---; tail -n 15 " DEVICE_LOG " 2>&1", text, 3072) == ESP_OK) {
+        for (char *line = strtok(text, "\r\n"); line; line = strtok(NULL, "\r\n")) ESP_LOGI(TAG, "diag: %s", line);
+    } else {
+        ESP_LOGW(TAG, "diagnostics failed");
+    }
+    free(text);
+}
+#endif
+
 /* A broken link makes every adb_exec return an empty answer: "not listening", "not installed". Check it after
  * each step so that the bootstrap stops instead of acting on those answers. */
 #define LINK_LOST(a) ((a)->broken)
@@ -114,6 +131,9 @@ esp_err_t bootstrap_deckd(adb_t *a)
     if (up) {
         ESP_LOGI(TAG, "deckd already listens on port %d", DECKD_PORT);
         err = ESP_OK;
+#ifdef CONFIG_D200_DEBUG
+        diagnose(a);
+#endif
         goto done;
     }
     long installed = installed_size(a, out, 512);
@@ -135,6 +155,9 @@ esp_err_t bootstrap_deckd(adb_t *a)
         if (deckd_listening(a, out, 512)) {
             ESP_LOGI(TAG, "deckd is listening on the device");
             err = ESP_OK;
+#ifdef CONFIG_D200_DEBUG
+            diagnose(a);
+#endif
             goto done;
         }
         if (LINK_LOST(a)) goto lost;
