@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -20,8 +21,6 @@ extern const uint8_t deckd_end[] ;
  * whether any survived (docs/hardware.md). */
 #define VENDOR "WatcherProcess UlanziDeckKey"
 #define VENDOR_PIDS "echo vendor:$(pidof " VENDOR ")"
-#define LOW_BRIGHTNESS 20
-#define LOW_BRIGHTNESS_STR "20"
 #define STOP_ATTEMPTS 3
 #define START_CHECKS 5
 
@@ -82,9 +81,23 @@ esp_err_t bootstrap_deckd(adb_t *a)
     const size_t size = deckd_end - deckd_start;
     char *out = malloc(512);
     if (!out) return ESP_ERR_NO_MEM;
-    /* Power test: a bright display may pull the 5 V of the OTG port down far enough to kill the link. */
-    ESP_LOGI(TAG, "lowering the backlight to %d", LOW_BRIGHTNESS);
-    adb_exec(a, "shell:echo " LOW_BRIGHTNESS_STR " > /sys/class/backlight/backlight/brightness", out, 512);
+    /* Diagnosis: harmless commands first, each logged, to see which one the link does not survive. */
+    static const char *const probes[] = {
+        "shell:echo ok",
+        "shell:echo vendor:$(pidof " VENDOR ")",
+        "shell:cat /sys/class/backlight/backlight/brightness",
+    };
+    for (size_t i = 0; i < sizeof probes / sizeof probes[0]; i++) {
+        int64_t t0 = esp_timer_get_time();
+        esp_err_t perr = adb_exec(a, probes[i], out, 512);
+        for (char *p = out; *p; p++) if (*p == '\n' || *p == '\r') *p = ' ';
+        ESP_LOGI(TAG, "probe %u (%s): %s after %lld ms, output \"%s\"", (unsigned)i, probes[i],
+                 perr == ESP_OK ? "ok" : "FAILED", (long long)((esp_timer_get_time() - t0) / 1000), out);
+        if (perr != ESP_OK) {
+            free(out);
+            return perr;
+        }
+    }
     esp_err_t err = stop_vendor(a, out, 512);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "cannot stop the vendor app: %s", out);
