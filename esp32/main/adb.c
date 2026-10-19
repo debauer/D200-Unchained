@@ -70,11 +70,32 @@ static esp_err_t rx_read(adb_t *a, uint8_t *dst, size_t n)
 
 /* --- messages --------------------------------------------------------------------------------- */
 
+static const char *name_of(uint32_t cmd)
+{
+    switch (cmd) {
+    case A_CNXN: return "CNXN";
+    case A_OPEN: return "OPEN";
+    case A_OKAY: return "OKAY";
+    case A_CLSE: return "CLSE";
+    case A_WRTE: return "WRTE";
+    default: return "????";
+    }
+}
+
+static void trace(const char *dir, const adb_msg_t *m)
+{
+#ifdef CONFIG_D200_DEBUG
+    ESP_LOGI(TAG, "%s %s arg0=%lu arg1=%lu len=%lu", dir, name_of(m->command), (unsigned long)m->arg0,
+             (unsigned long)m->arg1, (unsigned long)m->length);
+#endif
+}
+
 esp_err_t adb_send_msg(adb_t *a, uint32_t cmd, uint32_t arg0, uint32_t arg1, const void *data, size_t len)
 {
     uint32_t sum = 0;
     for (size_t i = 0; i < len; i++) sum += ((const uint8_t *)data)[i]; /* old adbd verifies it */
     adb_msg_t m = {cmd, arg0, arg1, (uint32_t)len, sum, cmd ^ 0xffffffff};
+    trace("tx", &m);
     esp_err_t err = bulk(a, a->out_ep, &m, sizeof m, NULL);
     if (err == ESP_OK && len) err = bulk(a, a->out_ep, (void *)data, len, NULL);
     return err;
@@ -89,6 +110,7 @@ esp_err_t adb_recv_msg(adb_t *a, adb_msg_t *m)
         ESP_LOGE(TAG, "bad message: cmd 0x%08lx length %lu", (unsigned long)m->command, (unsigned long)m->length);
         return ESP_ERR_INVALID_RESPONSE;
     }
+    trace("rx", m);
     return m->length ? rx_read(a, a->buf, m->length) : ESP_OK;
 }
 

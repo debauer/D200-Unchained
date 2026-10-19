@@ -70,12 +70,28 @@ static long installed_size(adb_t *a, char *out, size_t cap)
     return *p >= '0' && *p <= '9' ? strtol(p, NULL, 10) : -1;
 }
 
+/* The device's own view of what happened on the USB gadget: kernel log lines, one log line each. */
+static void dump_device_log(adb_t *a)
+{
+    char *text = malloc(4096);
+    if (!text) return;
+    if (adb_exec(a, "shell:dmesg | tail -n 40", text, 4096) == ESP_OK) {
+        for (char *line = strtok(text, "\r\n"); line; line = strtok(NULL, "\r\n")) ESP_LOGI(TAG, "dmesg: %s", line);
+    } else {
+        ESP_LOGW(TAG, "cannot read dmesg");
+    }
+    free(text);
+}
+
 esp_err_t bootstrap_deckd(adb_t *a)
 {
     const size_t size = deckd_end - deckd_start;
     char *out = malloc(512);
     if (!out) return ESP_ERR_NO_MEM;
     esp_err_t err = stop_vendor(a, out, 512);
+#ifdef CONFIG_D200_DEBUG
+    if (err == ESP_OK) dump_device_log(a);
+#endif
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "cannot stop the vendor app: %s", out);
     } else if (deckd_listening(a, out, 512)) {

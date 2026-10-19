@@ -132,6 +132,10 @@ static void adb_task(void *arg)
 void usb_adb_start(void)
 {
     s_new_dev = xSemaphoreCreateBinary();
+#ifdef CONFIG_D200_DEBUG
+    static const char *const usb_tags[] = {"HCD", "USBH", "USB HOST", "HUB", "HAL"};
+    for (size_t i = 0; i < sizeof usb_tags / sizeof usb_tags[0]; i++) esp_log_level_set(usb_tags[i], ESP_LOG_DEBUG);
+#endif
     const usb_host_config_t host = {.intr_flags = ESP_INTR_FLAG_LEVEL1};
     ESP_ERROR_CHECK(usb_host_install(&host));
     const usb_host_client_config_t client = {

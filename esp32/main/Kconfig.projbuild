@@ -16,4 +16,11 @@ menu "D200 host"
             WiFi transmit bursts can pull the 5 V of the USB-OTG port down and break the link to the
             D200. A low power is plenty at a good signal (RSSI -50 dBm or better).
 
+    config D200_DEBUG
+        bool "Debug output (ADB message trace, device kernel log, USB host log)"
+        default y
+        help
+            Logs every ADB message with its time, dumps the D200's dmesg once the bootstrap ran and turns
+            on the ESP-IDF USB host logs (needs "Maximum log verbosity: Debug", see sdkconfig.defaults).
+
 endmenu
