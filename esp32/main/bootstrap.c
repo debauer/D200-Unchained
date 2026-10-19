@@ -5,7 +5,6 @@
 #include <string.h>
 
 #include "esp_log.h"
-#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -42,21 +41,16 @@ static const char *vendor_pids(const char *out)
     return p;
 }
 
-/* Step by step, each logged: if the USB link dies on one of them, the log shows which. */
+/* The vendor app resets the USB gadget soon after an ADB session starts, which breaks the link; once it is
+ * gone the link is stable. So this is the very first command, and it is one command: it keeps running on
+ * the device even if the link dies right after it. A failed try is repeated by the caller. */
 static esp_err_t stop_vendor(adb_t *a, char *out, size_t cap)
 {
     for (int i = 0; i < STOP_ATTEMPTS; i++) {
-        esp_err_t err = adb_exec(a, "shell:" VENDOR_PIDS, out, cap);
-        const char *pids = err == ESP_OK ? vendor_pids(out) : NULL;
-        if (!pids) return ESP_FAIL;
-        if (!*pids) return ESP_OK;
-        ESP_LOGI(TAG, "vendor app running (pids %s): freezing", pids);
-        if (adb_exec(a, "shell:killall -STOP " VENDOR " 2>/dev/null; " VENDOR_PIDS, out, cap) != ESP_OK) return ESP_FAIL;
-        ESP_LOGI(TAG, "frozen, killing");
-        if (adb_exec(a, "shell:killall -KILL " VENDOR " 2>/dev/null; sleep 1; " VENDOR_PIDS, out, cap) != ESP_OK) {
-            return ESP_FAIL;
-        }
-        pids = vendor_pids(out);
+        esp_err_t err = adb_exec(a, "shell:killall -STOP " VENDOR " 2>/dev/null; killall -KILL " VENDOR
+                                    " 2>/dev/null; sleep 1; " VENDOR_PIDS, out, cap);
+        if (err != ESP_OK) return err;
+        const char *pids = vendor_pids(out);
         if (pids && !*pids) return ESP_OK;
         ESP_LOGW(TAG, "vendor app still running (pids %s), stopping it again", pids ? pids : "?");
     }
@@ -81,23 +75,6 @@ esp_err_t bootstrap_deckd(adb_t *a)
     const size_t size = deckd_end - deckd_start;
     char *out = malloc(512);
     if (!out) return ESP_ERR_NO_MEM;
-    /* Diagnosis: harmless commands first, each logged, to see which one the link does not survive. */
-    static const char *const probes[] = {
-        "shell:echo ok",
-        "shell:echo vendor:$(pidof " VENDOR ")",
-        "shell:cat /sys/class/backlight/backlight/brightness",
-    };
-    for (size_t i = 0; i < sizeof probes / sizeof probes[0]; i++) {
-        int64_t t0 = esp_timer_get_time();
-        esp_err_t perr = adb_exec(a, probes[i], out, 512);
-        for (char *p = out; *p; p++) if (*p == '\n' || *p == '\r') *p = ' ';
-        ESP_LOGI(TAG, "probe %u (%s): %s after %lld ms, output \"%s\"", (unsigned)i, probes[i],
-                 perr == ESP_OK ? "ok" : "FAILED", (long long)((esp_timer_get_time() - t0) / 1000), out);
-        if (perr != ESP_OK) {
-            free(out);
-            return perr;
-        }
-    }
     esp_err_t err = stop_vendor(a, out, 512);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "cannot stop the vendor app: %s", out);
