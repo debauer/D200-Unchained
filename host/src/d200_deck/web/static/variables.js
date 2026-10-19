@@ -7,13 +7,16 @@ const $ = (id) => document.getElementById(id);
 const DEFAULT_INTERVAL = 10;
 
 export class VariablesView {
-  // ctx: { config(), setConfig(cfg), changed() -> config edited (save, redraw), values() }
+  // ctx: { config(), setConfig(cfg), changed() -> config edited (save, redraw), values(), types() -> variable types of the host }
   constructor(ctx) {
     this.ctx = ctx;
     this.selected = null;
     $("add-var").addEventListener("click", () => this.add());
     $("var-name").addEventListener("change", (e) => this.rename(e.target.value.trim()));
+    $("var-type").addEventListener("change", (e) => this.setType(e.target.value));
     $("var-cmd").addEventListener("input", (e) => this.setCommand(e.target.value));
+    $("var-topic").addEventListener("input", (e) => this.update(this.selected, { topic: e.target.value.trim() }));
+    $("var-json").addEventListener("input", (e) => this.update(this.selected, { json_path: e.target.value.trim() }));
     $("var-interval").addEventListener("change", (e) => this.setInterval(e.target.value));
     $("var-delete").addEventListener("click", () => this.remove());
   }
@@ -58,6 +61,11 @@ export class VariablesView {
     this.ctx.changed();
   }
 
+  setType(type) {
+    this.update(this.selected, { type });
+    this.render();
+  }
+
   setCommand(line) {
     this.update(this.selected, { command: line });
     this.note("Runs on the host with sh -c; what it prints is the value.");
@@ -71,7 +79,13 @@ export class VariablesView {
 
   remove() {
     const name = this.selected;
-    this.ctx.setConfig({ ...this.ctx.config(), variables: this.variables().filter((v) => v.name !== name) });
+    const dropRules = (k) => (k.rules ? { ...k, rules: k.rules.filter((r) => r.variable !== name) } : k);
+    const cfg = this.ctx.config();
+    this.ctx.setConfig({
+      ...cfg,
+      variables: this.variables().filter((v) => v.name !== name),
+      pages: cfg.pages.map((p) => ({ ...p, keys: p.keys.map(dropRules) })), // rules need their variable
+    });
     this.selected = null;
     this.ctx.changed();
   }
@@ -103,9 +117,19 @@ export class VariablesView {
     $("var-form").hidden = !v;
     if (!v) return;
     if (document.activeElement !== $("var-name")) $("var-name").value = v.name;
+    const types = this.ctx.types();
+    $("var-type").replaceChildren(...[...new Set([...types, v.type])].map((t) => new Option(t, t)));
+    $("var-type").value = v.type;
+    const isMqtt = v.type === "mqtt";
+    $("var-command-box").hidden = isMqtt;
+    $("var-mqtt-box").hidden = !isMqtt;
     if (document.activeElement !== $("var-cmd")) $("var-cmd").value = v.type === "command" ? v.command || "" : "";
     $("var-cmd").disabled = v.type !== "command";
-    if (v.type !== "command") this.note(`Type "${v.type}" is not read by this host; kept in the config.`);
+    if (isMqtt) {
+      if (document.activeElement !== $("var-topic")) $("var-topic").value = v.topic || "";
+      if (document.activeElement !== $("var-json")) $("var-json").value = v.json_path || "";
+    } else if (v.type !== "command") this.note(`Type "${v.type}" is not read by this host; kept in the config.`);
+    $("var-interval-box").hidden = isMqtt;
     if (document.activeElement !== $("var-interval")) $("var-interval").value = v.interval ?? DEFAULT_INTERVAL;
   }
 }

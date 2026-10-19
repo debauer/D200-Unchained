@@ -6,6 +6,8 @@ import {
   addChild,
   canMove,
   movePage,
+  renameVariable,
+  ruleFor,
   crumbs,
   keyOf,
   viewOf,
@@ -84,4 +86,28 @@ test("moving a page keeps its subpages and clears the old parent's links", () =>
   assert.equal(moved.pages.find((p) => p.id === "root").keys[0].action.target, ""); // link from the old parent gone
   assert.equal(moved.pages.find((p) => p.id === "lights").keys[0].action.target, "studio"); // inner link kept
   assert.equal(linkedPages(moved).has("lights"), false); // FREE under the new parent
+});
+
+test("colour rules: the first rule whose variable has the value wins", () => {
+  const key = {
+    index: 0,
+    rules: [{ variable: "light", value: "ON", color: "ffcc00" }, { variable: "light", value: "OFF", color: "000050" }],
+  };
+  assert.equal(ruleFor(key, { light: " ON " }).color, "ffcc00");
+  assert.equal(ruleFor(key, { light: "OFF" }).color, "000050");
+  assert.equal(ruleFor(key, { light: "dim" }), null);
+  assert.equal(ruleFor(key, {}), null);
+  assert.equal(ruleFor({ index: 1 }, { light: "ON" }), null);
+});
+
+test("renaming a variable renames it in key texts and colour rules", () => {
+  const cfg = {
+    ...CFG,
+    variables: [{ name: "light", type: "mqtt", topic: "a/b" }],
+    pages: [{ ...CFG.pages[0], keys: [{ index: 0, label: "{light}", rules: [{ variable: "light", value: "ON" }] }] }],
+  };
+  const renamed = renameVariable(cfg, "light", "lamp");
+  assert.equal(renamed.variables[0].name, "lamp");
+  assert.equal(renamed.pages[0].keys[0].label, "{lamp}");
+  assert.equal(renamed.pages[0].keys[0].rules[0].variable, "lamp");
 });

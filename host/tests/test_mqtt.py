@@ -250,3 +250,18 @@ def test_paho_transport_against_a_real_broker() -> None:
         transport.stop()
         broker.close()
     wait_until(lambda: states[-1] == (False, ""))  # a normal disconnect is not an error
+
+
+def test_paho_transport_reports_an_unreachable_broker() -> None:
+    broker = MiniBroker()
+    port = broker.port
+    broker.close()  # nothing listens on this port any more
+    states: list[tuple[bool, str]] = []
+    transport = PahoTransport(
+        MqttSettings(host="127.0.0.1", port=port), lambda t, p: None, lambda c, e: states.append((c, e))
+    )
+    try:
+        transport.start()
+        wait_until(lambda: (False, "cannot reach the broker") in states)
+    finally:
+        transport.stop()

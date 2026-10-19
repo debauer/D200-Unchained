@@ -2,6 +2,7 @@
 // it holds no state of its own beyond what is on screen.
 
 import { ACTIONS, keyTitle } from "./deck.js";
+import { KeyMqtt } from "./keymqtt.js";
 import { joinCommand, splitCommand, toConfigColor, toCssColor } from "./rgb565.js";
 
 const SWATCHES = ["0a0d12", "00f0ff", "ff2bd6", "7cff4f", "ffb800", "6a2bff", "ff3b5c", "ffffff"];
@@ -25,6 +26,7 @@ export class Editor {
   constructor(callbacks) {
     this.cb = callbacks;
     this.key = null;
+    this.keyMqtt = new KeyMqtt(callbacks);
     $("target").addEventListener("change", (e) => this.cb.edit({ action: { type: "page", target: e.target.value } }));
     $("new-target").addEventListener("click", () => this.cb.newTarget());
     $("open-target").addEventListener("click", () => this.cb.openTarget(this.key.action.target));
@@ -57,8 +59,9 @@ export class Editor {
 
   // key: config entry; window: key window from /api/info; actions: types the host runs;
   // media: { name, hasMedia }; preview: canvas with the composed key image;
+  // variables: names of the config's variables (colour rules test them);
   // own: { color, label_color } true when the key sets that colour itself; nav: { pageName, parentName (null on the top page), targets: [{ id, name }] (subpages) }.
-  show({ key, window, actions, media, preview, nav, own }) {
+  show({ key, window, actions, media, preview, nav, own, variables }) {
     const switched = this.key?.index !== key.index;
     this.key = key;
     $("sel-title").textContent = keyTitle(window);
@@ -73,6 +76,7 @@ export class Editor {
     this.renderActions(key, actions);
     this.renderNav(key, nav);
     this.renderMedia(media, preview);
+    this.keyMqtt.show(key, variables);
   }
 
   renderNav(key, nav) {
@@ -164,7 +168,10 @@ export class Editor {
   pickAction(type) {
     if (type === "none") this.cb.edit({ action: null });
     else if (type === "command") this.cb.edit({ action: { type, argv: this.key.action?.argv || [] } });
-    else if (type === "page") this.cb.edit({ action: { type, target: this.key.action?.target || "" } });
+    else if (type === "mqtt") {
+      const a = this.key.action;
+      this.cb.edit({ action: { type, topic: a?.topic || "", payload: a?.payload || "", retain: Boolean(a?.retain), qos: a?.qos || 0 } });
+    } else if (type === "page") this.cb.edit({ action: { type, target: this.key.action?.target || "" } });
     else this.cb.edit({ action: { type } });
   }
 

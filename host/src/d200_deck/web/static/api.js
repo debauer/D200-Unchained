@@ -42,12 +42,14 @@ export const api = {
   putIcon: (page, i, bytes) => send("PUT", `${keyPath(page, i)}/icon`, bytes, "application/octet-stream"),
   deleteIcon: (page, i) => send("DELETE", `${keyPath(page, i)}/icon`),
   press: (page, i) => send("POST", `${keyPath(page, i)}/press`),
+  mqtt: () => json("/api/mqtt"),
+  putMqtt: (settings) => send("PUT", "/api/mqtt", JSON.stringify(settings), "application/json"),
   showPage: (page) => send("POST", "/api/page", JSON.stringify({ page }), "application/json"),
-  // handlers: { key, status, action, brightness, page, values } -> called with the event data;
+  // handlers: { key, status, action, brightness, page, values, mqtt } -> called with the event data;
   // { offline(), online() } when the stream to the host breaks / (re)opens.
   events(handlers) {
     const source = new EventSource("/api/events");
-    for (const kind of ["key", "status", "action", "brightness", "page", "values"]) {
+    for (const kind of ["key", "status", "action", "brightness", "page", "values", "mqtt"]) {
       source.addEventListener(kind, (e) => handlers[kind]?.(JSON.parse(e.data)));
     }
     source.onerror = () => handlers.offline?.();

@@ -7,10 +7,12 @@ import { DeckView, badgeOf } from "./deck.js";
 import { Editor } from "./editor.js";
 import { bindIO } from "./io.js";
 import { BLANK, ROOT, addChild, defaultsOf, children, movePage, pageOf, subtree, withPage, withoutSubtree } from "./model.js";
+import { MqttView } from "./mqtt.js";
 import { PagesView } from "./pages.js";
 import { toCssColor } from "./rgb565.js";
 import {
-  compose, ensureIcon, ensurePageImages, entryOf, forgetPages, lookOf, refreshDynamicKeys, setEntry, slot, state, windowOf,
+  compose, ensureIcon, ensurePageImages, entryOf, forgetPages, lookOf, refreshDynamicKeys, refreshPreview, setEntry, slot, state,
+  windowOf,
 } from "./store.js";
 import { toast } from "./ui.js";
 import { VariablesView } from "./variables.js";
@@ -26,7 +28,8 @@ const fail = (e) => toast(e.message, true);
 
 function drawKey(i) {
   const e = lookOf(state.page, i);
-  deck.draw(i, slot(state.page, i).image, toCssColor(e.color));
+  const s = slot(state.page, i);
+  deck.draw(i, s.preview ?? s.image, toCssColor(e.color));
   deck.setBadge(i, state.mode === "edit" && e.action ? badgeOf(e.action.type) : null);
 }
 
@@ -47,6 +50,7 @@ function showEditor() {
   const current = pageOf(state.config, page);
   const parent = current.parent ? pageOf(state.config, current.parent) : null;
   editor.show({
+    variables: (state.config.variables || []).map((v) => v.name),
     key: lookOf(page, i), own: ownColors(entryOf(page, i)), window: w, actions: state.info.actions,
     media: { hasMedia: Boolean(s.icon), name: s.mediaName },
     preview: s.image ? rawToCanvas(s.image, w.width, w.height) : solid(w, lookOf(page, i).color),
@@ -70,6 +74,7 @@ const autosave = new Autosave({ config: () => state.config, entryOf, setEntry, s
 async function changed(page, i) {
   await ensureIcon(page, i);
   slot(page, i).image = compose(page, i);
+  refreshPreview(page, i);
   if (page === state.page) {
     drawKey(i);
     if (i === state.selected) showEditor();
@@ -145,7 +150,10 @@ const variables = new VariablesView({
     refreshDynamic(state.page).catch(fail);
   },
   values: () => state.values,
+  types: () => state.info?.variable_types || ["command"],
 });
+
+const mqtt = new MqttView({ toast });
 
 // --- pages -------------------------------------------------------------------
 
@@ -252,6 +260,7 @@ async function loadAll() {
   [state.info, state.config] = await Promise.all([api.info(), api.config()]);
   Object.assign(state, { connected: state.info.connected, brightness: state.info.brightness, values: state.info.values });
   variables.render();
+  mqtt.load().catch(fail);
   refreshStatus();
   await fontsReady();
   state.keys.clear();
@@ -286,6 +295,7 @@ loadAll()
         variables.render();
         refreshDynamic(state.page).catch(fail);
       },
+      mqtt: (s) => mqtt.apply(s),
       brightness: (b) => {
         state.brightness = b;
         refreshStatus();

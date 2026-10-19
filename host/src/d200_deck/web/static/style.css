@@ -264,3 +264,14 @@ input[type="color"] { width: 40px; height: 30px; padding: 0; border: 1px solid r
   .device { padding: 14px; }
   .device-foot .bl input { width: 80px; }
 }
+
+/* MQTT: broker form, publish action, colour rules */
+.mqtt-status { float: right; display: inline-flex; align-items: center; gap: 6px; font-size: 10px; text-transform: none; letter-spacing: 0; }
+.mqtt-status .led { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.mqtt-form .interval input[type="number"] { width: 80px; }
+.var-box { display: flex; flex-direction: column; gap: 6px; }
+.rules { display: flex; flex-direction: column; gap: 6px; }
+.rule { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px 28px auto; gap: 6px; align-items: center; }
+.rule .text-input { font-size: 12px; padding: 6px 8px; min-width: 0; }
+.rule input[type="color"] { width: 28px; height: 28px; padding: 0; border: 1px solid var(--line); background: none; }
+#mqtt-qos { background: var(--bg); color: #fff; border: 1px solid rgba(0, 240, 255, 0.3); padding: 2px 4px; }

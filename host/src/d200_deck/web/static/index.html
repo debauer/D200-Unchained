@@ -48,11 +48,38 @@
       <div class="var-form" id="var-form" hidden>
         <label class="label" for="var-name">Name</label>
         <input id="var-name" class="text-input" maxlength="32" spellcheck="false">
-        <label class="label" for="var-cmd">Command</label>
-        <input id="var-cmd" class="text-input cmd-line" spellcheck="false" placeholder="e.g. date +%S">
-        <label class="muted interval">every <input id="var-interval" type="number" min="1" max="3600"> s</label>
+        <label class="label" for="var-type">Type</label>
+        <select id="var-type" class="text-input"></select>
+        <div class="var-box" id="var-command-box">
+          <label class="label" for="var-cmd">Command</label>
+          <input id="var-cmd" class="text-input cmd-line" spellcheck="false" placeholder="e.g. date +%S">
+        </div>
+        <div class="var-box" id="var-mqtt-box" hidden>
+          <label class="label" for="var-topic">Topic</label>
+          <input id="var-topic" class="text-input cmd-line" spellcheck="false" placeholder="e.g. home/light/state">
+          <label class="label" for="var-json">JSON path (optional)</label>
+          <input id="var-json" class="text-input cmd-line" spellcheck="false" placeholder="e.g. state.power">
+        </div>
+        <label class="muted interval" id="var-interval-box">every <input id="var-interval" type="number" min="1" max="3600"> s</label>
         <span class="muted small-print" id="var-note"></span>
         <button type="button" class="reset" id="var-delete">&times; Delete variable</button>
+      </div>
+
+      <div class="section-title">// MQTT <span class="mqtt-status"><span class="led" id="mqtt-led"></span><span id="mqtt-status">off</span></span></div>
+      <div class="var-form mqtt-form" id="mqtt-form">
+        <label class="label" for="mqtt-host">Broker host</label>
+        <input id="mqtt-host" class="text-input" spellcheck="false" placeholder="empty = MQTT off">
+        <label class="muted interval">port <input id="mqtt-port" type="number" min="1" max="65535"></label>
+        <label class="label" for="mqtt-user">User</label>
+        <input id="mqtt-user" class="text-input" spellcheck="false" autocomplete="off">
+        <label class="label" for="mqtt-pass">Password</label>
+        <input id="mqtt-pass" class="text-input" type="password" autocomplete="new-password">
+        <label class="muted interval"><input id="mqtt-tls" type="checkbox"> TLS</label>
+        <div class="row wrap">
+          <button type="button" class="btn outline small" id="mqtt-save">Save</button>
+          <button type="button" class="btn ghost small danger-hover" id="mqtt-clear-pass" hidden>Clear password</button>
+        </div>
+        <span class="muted small-print">Stored in mqtt.json next to config.json, never exported. Incoming messages are only shown, never executed.</span>
       </div>
     </aside>
 
@@ -158,10 +185,29 @@
       </div>
       <p class="muted" id="back-info" hidden></p>
 
+      <div class="field" id="mqtt-box" hidden>
+        <label class="label" for="mqtt-topic">Publish to topic</label>
+        <input id="mqtt-topic" class="text-input cmd-line" spellcheck="false" placeholder="e.g. home/light/set">
+        <label class="label" for="mqtt-payload">Payload</label>
+        <input id="mqtt-payload" class="text-input cmd-line" spellcheck="false" placeholder="e.g. toggle">
+        <div class="row wrap">
+          <label class="muted"><input id="mqtt-retain" type="checkbox"> retain</label>
+          <label class="muted">QoS <select id="mqtt-qos"><option>0</option><option>1</option><option>2</option></select></label>
+        </div>
+        <span class="muted small-print" id="mqtt-note">Sent when the key is pressed on the device. The TEST tab only logs it.</span>
+      </div>
+
       <div class="field" id="command-box" hidden>
         <label class="label" for="command">Command</label>
         <textarea id="command" class="cmd" rows="3" placeholder="e.g. open -a OBS"></textarea>
         <span class="muted small-print" id="command-note">Runs without a shell: quotes group arguments, pipes and &amp;&amp; are passed on literally.</span>
+      </div>
+
+      <div class="field">
+        <span class="label">Colour rules</span>
+        <div class="rules" id="rules"></div>
+        <button type="button" class="btn dashed small" id="add-rule">+ Rule</button>
+        <span class="muted small-print">While a variable has exactly this value, the key shows these colours (first match wins). Needs a variable, e.g. an MQTT one.</span>
       </div>
 
       <button type="button" class="reset" id="reset">&times; Reset key</button>

@@ -6,6 +6,7 @@ import { rawToCanvas } from "./compose.js";
 export const ACTIONS = [
   ["none", "None", "\u2014"],
   ["command", "Command", "CMD"],
+  ["mqtt", "MQTT publish", "MQTT"],
   ["page", "Page", "SITE"],
   ["back", "Back", "BACK"],
   ["bl_down", "Backlight \u2212", "BL\u2212"],

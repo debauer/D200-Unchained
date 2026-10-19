@@ -2,7 +2,7 @@
 
 import { api } from "./api.js";
 import { composeClock, composeKey } from "./compose.js";
-import { ROOT, clockColors, keyOf, viewOf, withKey } from "./model.js";
+import { ROOT, clockColors, keyOf, ruleFor, viewOf, withKey } from "./model.js";
 import { BUILTINS, builtinValues, fill, isDynamic } from "./placeholders.js";
 import { toCssColor } from "./rgb565.js";
 
@@ -44,15 +44,20 @@ const isInfoWindow = (w) => w.width > w.height * 1.5;
 // The image the device shows: null for a plain fill. Dynamic keys (placeholders, the
 // empty info window's clock) are rendered by the host; here only as a preview with the
 // current values, and `slot.dynamic` keeps autosave from uploading them.
-export function compose(page, i) {
-  const e = lookOf(page, i);
+export function compose(page, i, { rules = false } = {}) {
+  const base = lookOf(page, i);
+  // `rules`: preview with the colours of the matching colour rule; the stored image never has them
+  // (the host draws a matching rule itself and falls back to the stored image).
+  const rule = rules ? ruleFor(base, state.values) : null;
+  const e = rule ? { ...base, color: rule.color || base.color, label_color: rule.label_color || base.label_color } : base;
   const s = slot(page, i);
   const w = windowOf(i);
   const label = (e.label || "").trim();
   const now = builtinValues(new Date());
   s.dynamic = isDynamic(label) || (isInfoWindow(w) && !s.icon && !label);
   if (!s.icon && !label) {
-    if (!s.dynamic) return null;
+    if (!s.dynamic && !rule) return null;
+    if (!s.dynamic) return composeKey({ w: w.width, h: w.height, color: toCssColor(e.color), label: "", labelColor: toCssColor(e.label_color), labelPos: "bottom", labelSize: 100 });
     const c = clockColors(state.config, page, i);
     const colors = { color: toCssColor(e.color), timeColor: toCssColor(c.time), dateColor: toCssColor(c.date) };
     return composeClock({ w: w.width, h: w.height, ...colors, ...now });
@@ -87,15 +92,23 @@ export async function ensurePageImages(page) {
   );
 }
 
+// Preview of a key with colour rules: the image with the matching rule's colours, or null for the stored image.
+export function refreshPreview(page, i) {
+  const s = slot(page, i);
+  s.preview = ruleFor(lookOf(page, i), state.values) ? compose(page, i, { rules: true }) : null;
+}
+
 // Recompose the dynamic keys of `page` (placeholders, the empty info window's clock)
 // as a preview with the current values; `updated(index)` is called for each.
 export async function refreshDynamicKeys(page, updated) {
   for (const w of state.info.keys) {
     const e = entryOf(page, w.index);
     const emptyInfo = isInfoWindow(w) && !e.image && !(e.label || "").trim();
-    if (!isDynamic(e.label) && !emptyInfo) continue;
+    const dynamic = isDynamic(e.label) || emptyInfo;
+    if (!dynamic && !e.rules?.length) continue;
     await ensureIcon(page, w.index);
-    slot(page, w.index).image = compose(page, w.index);
+    if (dynamic) slot(page, w.index).image = compose(page, w.index);
+    refreshPreview(page, w.index);
     updated(w.index);
   }
 }

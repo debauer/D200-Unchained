@@ -38,6 +38,11 @@ export function viewOf(cfg, pageId, index) {
   return { ...k, color: k.color || d.color, label_color: k.label_color || d.label_color };
 }
 
+// The first colour rule of a key whose variable currently has its value (values: name -> text).
+export function ruleFor(key, values) {
+  return (key.rules || []).find((r) => r.variable in values && String(values[r.variable]).trim() === r.value.trim()) || null;
+}
+
 export function withPage(cfg, page) {
   const exists = cfg.pages.some((p) => p.id === page.id);
   return { ...cfg, pages: exists ? cfg.pages.map((p) => (p.id === page.id ? page : p)) : [...cfg.pages, page] };
@@ -134,9 +139,10 @@ export function movePage(cfg, id, parentId) {
   return withPage(moved, { ...old, keys: old.keys.map(unlink) });
 }
 
-// Rename a variable and its placeholders in every key text.
+// Rename a variable, its placeholders in every key text and its colour rules.
 export function renameVariable(cfg, from, to) {
-  const swap = (k) => (k.label ? { ...k, label: k.label.split(`{${from}}`).join(`{${to}}`) } : k);
+  const rules = (k) => (k.rules ? { ...k, rules: k.rules.map((r) => (r.variable === from ? { ...r, variable: to } : r)) } : k);
+  const swap = (k) => rules(k.label ? { ...k, label: k.label.split(`{${from}}`).join(`{${to}}`) } : k);
   return {
     ...cfg,
     variables: (cfg.variables || []).map((v) => (v.name === from ? { ...v, name: to } : v)),

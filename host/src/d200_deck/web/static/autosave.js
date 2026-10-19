@@ -7,12 +7,16 @@ const SAVE_DELAY_MS = 500;
 // What the host accepts: a command without arguments is still being typed.
 // Variables without a command are left out the same way.
 export function serializable(config) {
+  const own = ({ command, topic, json_path, ...v }) => ({ ...v, ...(v.type === "mqtt" ? { topic, json_path } : v.type === "command" ? { command } : {}) });
+  const variables = (config.variables || []).filter((v) => v.type !== "command" || v.command?.trim()).map(own);
+  const known = new Set([...variables.map((v) => v.name), "time", "date"]);
   const clean = (k) => {
-    if (k.action?.type !== "command" || k.action.argv?.length) return k;
-    const { action, ...rest } = k;
-    return rest;
+    const { rules, ...rest } = k;
+    if (rest.action?.type === "command" && !rest.action.argv?.length) delete rest.action;
+    // Colour rules need an existing variable, else the host rejects the whole config.
+    const kept = (rules || []).filter((r) => known.has(r.variable));
+    return kept.length ? { ...rest, rules: kept } : rest;
   };
-  const variables = (config.variables || []).filter((v) => v.type !== "command" || v.command?.trim());
   return { ...config, pages: config.pages.map((p) => ({ ...p, keys: p.keys.map(clean) })), variables };
 }
 

@@ -55,6 +55,7 @@ class PahoTransport:
         client.reconnect_delay_set(RECONNECT_MIN_S, RECONNECT_MAX_S)
         client.on_connect = self._connected_cb
         client.on_disconnect = self._disconnected_cb
+        client.on_connect_fail = lambda _c, _u: self._on_state(False, "cannot reach the broker")
         client.on_message = lambda _c, _u, msg: self._on_message(msg.topic, bytes(msg.payload))
         self._client = client
 
@@ -199,8 +200,9 @@ class MqttService:
 
     def _state(self, connected: bool, error: str) -> None:
         with self._lock:
+            changed = error != self._error
             self._connected, self._error = connected, error
-        if error:
+        if error and changed:  # paho retries: report a problem once, not at every attempt
             log.warning("mqtt: %s", error)
         self._on_status(self.status())
 
