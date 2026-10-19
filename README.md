@@ -31,6 +31,7 @@ and not part of this repository yet.
 - **Subpages**: build a page tree with `page` and `back` keys, move pages around by drag and
   drop.
 - **Actions**: run shell commands, change the backlight, switch the display off and on.
+- **MQTT**: keys publish messages; incoming messages show values on keys and change their colours (see [docs/mqtt.md](docs/mqtt.md)).
 - **Live values**: show the output of shell commands on keys (e.g. `CPU {cpu}%`, polled at an
   interval you choose), plus a built-in clock and date.
 - **Web configurator**: edit and test everything in the browser, changes are saved and shown on
@@ -55,7 +56,7 @@ The web configurator: edit a key (image, colours, text, action) and test it live
 |---|---|
 | `device/` | Rust crate for the device: `deckd`, `hello`, `calibrate` |
 | `host/` | Python package `d200-deck` with the `deck` command and the web UI |
-| `docs/` | `python-library.md` (write your own Python programs), `protocol.md` (deckd protocol), `web-api.md` (HTTP API), `hardware.md` (display, keys, layout) |
+| `docs/` | `python-library.md` (write your own Python programs), `mqtt.md` (MQTT), `protocol.md` (deckd protocol), `web-api.md` (HTTP API), `hardware.md` (display, keys, layout) |
 | `img/` | Screenshots for this README |
 
 ## Installation
@@ -94,6 +95,9 @@ Until then:
   whoever can write it can run commands. Keep it writable only by you.
 - **Do not put secrets into commands or key texts**: keys, variable values and the
   configuration are visible in the UI and on the device screen.
+- **MQTT**: the broker password is stored in `$XDG_CONFIG_HOME/deck/mqtt.json` (mode 0600), kept out
+  of `config.json` and the export, and never returned by the API. Incoming messages are only shown,
+  never executed. Use TLS for a broker that is not on your own machine; see `docs/mqtt.md`.
 - **Device side**: `deckd` listens on `127.0.0.1:7200` on the D200 only and is reached through
   `adb forward`, which makes the port available to local users of the host. `deckd` has no
   authentication either, so anyone with access to that port can draw on the screen. `adb`

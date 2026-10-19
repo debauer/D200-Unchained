@@ -43,6 +43,8 @@ The API can configure actions that the host executes. Therefore:
 | PUT | `/api/keys/<index>/icon` | Store an icon (body: RGB565, exactly the window size); it is not displayed |
 | DELETE | `/api/keys/<index>/icon` | Remove the icon |
 | POST | `/api/keys/<index>/press` | Test the key's action (UI test mode): `command` actions are only reported, never started (`(test, not run) $ ...`); device and page actions run; `{"started": bool}`, `503` if the device is unreachable for a device action |
+| GET | `/api/mqtt` | MQTT broker settings and state (never the password) |
+| PUT | `/api/mqtt` | Set the broker settings; a missing `password` keeps the stored one, `null` clears it |
 | GET | `/api/events` | Server-sent events with key presses |
 
 All `/api/keys/<index>/...` endpoints also exist per page as
@@ -57,11 +59,11 @@ All `/api/keys/<index>/...` endpoints also exist per page as
   "connected": true,
   "screen": {"width": 1280, "height": 720},
   "keys": [{"index": 0, "code": 29, "x": 11, "y": 3, "width": 196, "height": 196}],
-  "actions": ["command", "bl_down", "bl_up", "disp_off", "disp_on", "page", "back"],
+  "actions": ["command", "mqtt", "bl_down", "bl_up", "disp_off", "disp_on", "page", "back"],
   "brightness": {"level": 204, "percent": 80, "display_on": true},
   "page": "root",
   "values": {"cpu": "42", "time": "14:41", "date": "Fri 17.10."},
-  "variable_types": ["command"]
+  "variable_types": ["command", "mqtt"]
 }
 ```
 
@@ -72,17 +74,29 @@ All `/api/keys/<index>/...` endpoints also exist per page as
 - `actions`: action types this host can execute. The UI offers only these. Both
   hosts: `bl_down`, `bl_up` (brightness -/+ 20 %), `disp_off`, `disp_on`, `page`
   (open subpage `target`), `back` (to the parent page). Linux additionally
-  `command`; an ESP32 later e.g. `http`, `mqtt`. Unknown types in the
+  `command` and `mqtt` (publish a message, see [mqtt.md](mqtt.md)); an ESP32 later e.g. `http`. Unknown types in the
   configuration are kept but not executed.
 - `page`: the page the device is currently showing.
 - `values`: current values of the placeholder variables (only variables of the
   shown page are polled) plus the built-in `time` and `date`. `!` = command
   failed, `?` = type not supported by this host.
-- `variable_types`: variable types this host can read (Linux: `command`; an ESP32
-  later e.g. `http`, `mqtt`).
+- `variable_types`: variable types this host can read (Linux: `command`, `mqtt`; an ESP32
+  later e.g. `http`).
 - `brightness`: current runtime state. `level` (0-255) applies while the display is
   on; `brightness` in the configuration is only the start value and sets `level`
   when it changes.
+
+### `GET /api/mqtt`, `PUT /api/mqtt`
+
+```json
+{"host": "broker", "port": 1883, "username": "me", "tls": false, "client_id": "",
+ "password_set": true, "enabled": true, "connected": true, "error": ""}
+```
+
+`PUT` takes `host`, `port`, `username`, `tls`, `client_id` and `password` (all optional; an
+empty `host` turns MQTT off) and answers with the same object, `400` for invalid values. The
+password is write-only: it is stored in `mqtt.json` (mode 0600), never returned and not part of
+`/api/config`. The test press (`POST .../press`) only reports an `mqtt` action, it does not publish.
 
 ### `PUT /api/config`
 
@@ -152,6 +166,14 @@ When the brightness changes, and once right after connecting (like `status`):
 ```
 event: brightness
 data: {"level": 255, "percent": 100, "display_on": true}
+
+```
+
+When the broker state changes, and once right after connecting (same object as `GET /api/mqtt`):
+
+```
+event: mqtt
+data: {"host": "broker", "port": 1883, "enabled": true, "connected": true, "error": ""}
 
 ```
 

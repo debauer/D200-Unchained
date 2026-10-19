@@ -124,13 +124,18 @@ Configuration (JSON, same format later on the ESP32; version 1 files with a flat
   the second text colour of two-colour elements: the clock shows the time in
   `label_color` (default cyan) and the date in `accent_color` (default magenta)
   on `color`.
+- MQTT (broker in the web UI, see `../docs/mqtt.md`): `variables` of type `mqtt`
+  (`{"name": "light", "type": "mqtt", "topic": "home/light", "json_path": "state.power"}`) show
+  the latest message, the action `{"type": "mqtt", "topic": ..., "payload": ..., "retain": false, "qos": 0}`
+  publishes one, and a key's `rules` (`{"variable": "light", "value": "ON", "color": "ffcc00",
+  "label_color": "000000"}`) change its colours while a variable has that value.
 - `color`: fill colour of the key (default: `background`).
 - `image`: RGB565 file in `$XDG_DATA_HOME/deck/images/`, exactly the size of the
   key window (`deck info`); if it does not fit, `color` is used.
 - `action`: `command` with an argument list (no shell; runs in the background,
   the exit code is logged) or `bl_down`, `bl_up` (brightness -/+ 20 %),
-  `disp_off`, `disp_on`, `page` (with `target`), `back`. Unknown types (e.g. from
-  the ESP32) are kept and ignored.
+  `disp_off`, `disp_on`, `page` (with `target`), `back`, `mqtt` (publish a message).
+  Unknown types (e.g. from the ESP32) are kept and ignored.
 - `brightness`: start brightness; key actions only change the runtime value.
 - `label`, `label_color`, `label_pos` (`top`/`center`/`bottom`), `label_size`
   (50-250 % of the automatic size; text that is too long is still fitted): text
