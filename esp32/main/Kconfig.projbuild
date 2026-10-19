@@ -27,4 +27,10 @@ menu "D200 host"
         bool "Draw test images on key 0 at every connection (timing log)"
         default n
 
+    config D200_TIMEZONE
+        string "Time zone (POSIX TZ string)"
+        default "CET-1CEST,M3.5.0,M10.5.0/3"
+        help
+            For the clock and {time}/{date}. The default is Central Europe with daylight saving time.
+
 endmenu

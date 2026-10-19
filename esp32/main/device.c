@@ -10,6 +10,8 @@
 #include "actions.h"
 #include "deckd.h"
 #include "draw.h"
+#include "drawdyn.h"
+#include "wallclock.h"
 #include "esp_log.h"
 #include "events.h"
 #include "freertos/FreeRTOS.h"
@@ -217,7 +219,13 @@ esp_err_t device_run(adb_t *a)
      * pending for seconds failed with a WiFi running. A ping every PING_MS keeps every transfer short; key
      * events arrive between the replies. */
     device_request_redraw(-1); /* a fresh connection: the screen still shows whatever was there before */
+    long last_minute = -1;
     while (usb_adb_device_present()) {
+        struct tm now;
+        if (wallclock_now(&now) && time(NULL) / 60 != last_minute) { /* the clock moved on, or was just set */
+            last_minute = time(NULL) / 60;
+            drawdyn_request_all();
+        }
         portENTER_CRITICAL(&s_redraw_lock);
         bool all = s_redraw_all;
         uint32_t keys = s_redraw_keys;

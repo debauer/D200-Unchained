@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 
 #include "config.h"
+#include "drawdyn.h"
 #include "esp_log.h"
 
 static const char *TAG = "draw";
@@ -20,6 +21,15 @@ static bool parse_color(const cJSON *item, uint8_t rgb[3])
     rgb[1] = v >> 8;
     rgb[2] = v;
     return true;
+}
+
+rgb_t draw_color(const cJSON *config, const cJSON *page, const cJSON *key, const char *field, rgb_t fallback)
+{
+    uint8_t c[3] = {fallback.r, fallback.g, fallback.b};
+    if (strcmp(field, "color") == 0 && config) parse_color(cJSON_GetObjectItem(config, "background"), c);
+    if (page) parse_color(cJSON_GetObjectItem(page, field), c);
+    if (key) parse_color(cJSON_GetObjectItem(key, field), c);
+    return (rgb_t){c[0], c[1], c[2]};
 }
 
 static void log_refusal(const char *what, uint8_t type, const uint8_t *reply, size_t n)
@@ -56,6 +66,10 @@ esp_err_t draw_page(deckd_t *d, const device_state_t *state, uint32_t keys, bool
         if (w->index >= 32 || !(keys & (1u << w->index))) continue;
         drawn++;
         const cJSON *key = page ? config_find_key(page, w->index) : NULL;
+        if (drawdyn_is_dynamic(key, w)) { /* placeholders or the clock: drawn here, not uploaded */
+            err = drawdyn_key(d, config, page, state->page, key, w);
+            continue;
+        }
         FILE *f = open_image(key, w);
         if (f) {
             err = deckd_set_key_image_file(d, w->index, w->width, w->height, f, &type, reply, sizeof reply, &n);
@@ -64,9 +78,10 @@ esp_err_t draw_page(deckd_t *d, const device_state_t *state, uint32_t keys, bool
             images++;
             continue;
         }
-        memcpy(color, background, 3);
-        if (page) parse_color(cJSON_GetObjectItem(page, "color"), color);
-        if (key) parse_color(cJSON_GetObjectItem(key, "color"), color);
+        rgb_t c = draw_color(config, page, key, "color", (rgb_t){0, 0, 0});
+        color[0] = c.r;
+        color[1] = c.g;
+        color[2] = c.b;
         uint8_t payload[5] = {w->index, w->index >> 8, color[0], color[1], color[2]};
         err = deckd_request(d, DECKD_FILL_KEY, payload, sizeof payload, &type, reply, sizeof reply, &n);
         if (err == ESP_OK && type != DECKD_OK) log_refusal("fill key", type, reply, n);

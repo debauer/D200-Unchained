@@ -8,14 +8,24 @@ Current state: WiFi, web server with the shared UI, `/api/info` stub, USB enumer
 the bootstrap (stops the vendor app, pushes the embedded `deckd` to the D200 if needed and starts it) and a
 `deckd` client. The web API serves `/api/info` with the real key windows, `/api/events` (key presses, status), and
 stores the configuration (`/api/config`). Key images and icons are stored and drawn (the web UI composes them in the browser). Key actions run on the device (backlight
--/+, display on/off, page, back; `POST .../press` in the TEST tab, `POST /api/page`). Still missing: the renderer
-for text that changes (placeholders, the clock).
+-/+, display on/off, page, back; `POST .../press` in the TEST tab, `POST /api/page`). Keys with `{time}`/`{date}`
+placeholders and the info window's clock are drawn by the firmware itself (stb_truetype with Chakra Petch, converted
+from the web interface's woff2 at build time) and refreshed every minute. Not done: variables with a source
+(`command` has none on this host; `http`/`mqtt` follow), colour rules.
 
 ## Hardware
 
 ESP32-S3 devkit with two USB-C ports: **COM** (USB-UART, to the PC for flashing and the log) and
 **USB-OTG** (to the D200). The solder jumpers `USB-OTG` and `IN-OUT` decide how the OTG port is
 powered; check them against the schematic of your board revision. The flash layout assumes 8 MB or more.
+
+## Requirements
+
+- **PSRAM** (ESP32-S3 with octal PSRAM, e.g. N8R8/N16R8): the renderer needs a few hundred KB for the wide
+  info window. `sdkconfig.defaults` turns it on; a board without it will not start.
+- The time zone for the clock is a menu item (`D200 host`), default Central Europe.
+- `sdkconfig.defaults` only applies to a fresh `sdkconfig.esp32s3`: after it changes, delete that file (and enter
+  the WiFi data again in `menuconfig`) or change the setting there.
 
 ## Build and flash
 
@@ -33,6 +43,8 @@ uv run pio run -t upload          # firmware
 uv run pio run -t uploadfs        # web UI (../host/src/d200_deck/web/static) into the `www` partition
 uv run pio device monitor         # log, on the COM port
 ```
+
+`scripts/test.sh` runs the tests of the portable code (renderer, placeholders) on the PC.
 
 `scripts/run.sh` does upload and monitor in one go and also writes the output to files
 (`logs/latest.log` for the monitor, `logs/upload.log` for build and upload; `--seconds 60`, `--no-upload`,

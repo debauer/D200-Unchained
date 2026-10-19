@@ -7,6 +7,7 @@ dependencies.lock
 sdkconfig.*
 !sdkconfig.defaults
 .venv/
-main/deckd_blob.S
+main/blobs.S
+main/fonts/
 uv-*.lock
 logs/

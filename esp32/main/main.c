@@ -4,6 +4,7 @@
 #include "device.h"
 #include "keyfiles.h"
 #include "logbuf.h"
+#include "wallclock.h"
 #include "usb_adb.h"
 #include "web.h"
 #include "wifi.h"
@@ -34,5 +35,8 @@ void app_main(void)
     keyfiles_init();
     device_init();
     usb_adb_start(); /* independent of WiFi */
-    if (wifi_start() == ESP_OK) ESP_ERROR_CHECK(web_start());
+    if (wifi_start() == ESP_OK) {
+        wallclock_start();
+        ESP_ERROR_CHECK(web_start());
+    }
 }
