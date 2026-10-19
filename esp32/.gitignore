@@ -8,3 +8,4 @@ sdkconfig.*
 !sdkconfig.defaults
 .venv/
 main/deckd_blob.S
+uv-*.lock
