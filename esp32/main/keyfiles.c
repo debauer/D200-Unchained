@@ -8,6 +8,7 @@
 
 #include "cJSON.h"
 #include "config.h"
+#include "actions.h"
 #include "device.h"
 #include "esp_log.h"
 #include "web.h"
@@ -169,6 +170,15 @@ esp_err_t keyfiles_handler(httpd_req_t *req)
     bool page_known = config && config_find_page(config, t.page);
     cJSON_Delete(config);
     if (!page_known) return web_json_error(req, "404 Not Found", "unknown page");
+    if (strcmp(t.what, "press") == 0) {
+        if (req->method != HTTP_POST) return web_json_error(req, "405 Method Not Allowed", "method not allowed on press");
+        if (!web_mutation_allowed(req)) return web_json_error(req, "403 Forbidden", "missing X-Deck-Request header");
+        /* TEST mode: the action runs as if the key was pressed; there are no commands on this host to hold back */
+        char json[24];
+        snprintf(json, sizeof json, "{\"started\":%s}", actions_run(t.index, t.page) ? "true" : "false");
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, json);
+    }
     const char *kind = kind_of(t.what);
     if (!kind) return web_json_error(req, "404 Not Found", "not found");
 

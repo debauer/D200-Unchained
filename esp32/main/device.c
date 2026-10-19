@@ -7,6 +7,7 @@
 
 #include "cJSON.h"
 #include "config.h"
+#include "actions.h"
 #include "deckd.h"
 #include "draw.h"
 #include "esp_log.h"
@@ -42,6 +43,7 @@ static SemaphoreHandle_t s_lock;
 static portMUX_TYPE s_redraw_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool s_redraw_all = true;
 static uint32_t s_redraw_keys; /* bit per key index */
+static volatile bool s_brightness_dirty;
 
 void device_request_redraw(int key)
 {
@@ -125,6 +127,29 @@ void device_event_json(const char *name, char *out, size_t size)
     else snprintf(out, size, "{}");
 }
 
+void device_set_backlight(int level, bool display_on)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_state.brightness = level;
+    s_state.display_on = display_on;
+    xSemaphoreGive(s_lock);
+    s_brightness_dirty = true;
+    char json[96];
+    device_event_json("brightness", json, sizeof json);
+    events_publish("brightness", json);
+}
+
+void device_set_page(const char *id)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    snprintf(s_state.page, sizeof s_state.page, "%s", id);
+    xSemaphoreGive(s_lock);
+    char json[64];
+    device_event_json("page", json, sizeof json);
+    events_publish("page", json);
+    device_request_redraw(-1);
+}
+
 static void set_connected(bool connected)
 {
     xSemaphoreTake(s_lock, portMAX_DELAY);
@@ -143,6 +168,11 @@ static void publish_key(uint16_t index, bool pressed)
     char json[64];
     snprintf(json, sizeof json, "{\"index\":%u,\"pressed\":%s}", index, pressed ? "true" : "false");
     events_publish("key", json);
+    if (pressed) {
+        device_state_t state;
+        device_snapshot(&state);
+        actions_run(index, state.page); /* only sets state and flags: the device task acts on them */
+    }
 }
 
 /* INFO payload: u16 version, u16 width, u16 height, u8 count, count * (6 x u16). */
@@ -173,10 +203,7 @@ esp_err_t device_run(adb_t *a)
     esp_err_t err = deckd_open(d, a);
     if (err == ESP_OK) err = deckd_request(d, DECKD_HELLO, NULL, 0, &type, frame, sizeof frame, &n);
     if (err == ESP_OK && (type != DECKD_INFO || read_info(frame, n) != ESP_OK)) err = ESP_FAIL;
-    if (err == ESP_OK) {
-        const uint8_t level = START_BRIGHTNESS;
-        err = deckd_request(d, DECKD_SET_BRIGHTNESS, &level, 1, &type, frame, sizeof frame, &n);
-    }
+    s_brightness_dirty = true; /* sent in the loop below: a fresh connection starts from the current state */
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "hello failed: %s", esp_err_to_name(err));
         free(d);
@@ -197,6 +224,14 @@ esp_err_t device_run(adb_t *a)
         s_redraw_all = false;
         s_redraw_keys = 0;
         portEXIT_CRITICAL(&s_redraw_lock);
+        if (s_brightness_dirty) {
+            s_brightness_dirty = false;
+            device_state_t state;
+            device_snapshot(&state);
+            const uint8_t level = state.display_on ? state.brightness : 0;
+            err = deckd_request(d, DECKD_SET_BRIGHTNESS, &level, 1, &type, frame, sizeof frame, &n);
+            if (err != ESP_OK) break;
+        }
         if (all || keys) {
             device_state_t state;
             device_snapshot(&state);

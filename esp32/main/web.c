@@ -154,6 +154,34 @@ static esp_err_t api_config_put(httpd_req_t *req)
     return err;
 }
 
+/* POST /api/page {"page": "<id>"}: show a page on the device. */
+static esp_err_t api_page(httpd_req_t *req)
+{
+    REQUIRE_HEADER(req);
+    char body[96];
+    int n = req->content_len < sizeof body ? httpd_req_recv(req, body, req->content_len) : -1;
+    if (n <= 0) return web_json_error(req, "400 Bad Request", "expected {\"page\": \"<id>\"}");
+    body[n] = 0;
+    cJSON *json = cJSON_Parse(body);
+    const cJSON *id = json ? cJSON_GetObjectItem(json, "page") : NULL;
+    if (!cJSON_IsString(id)) {
+        cJSON_Delete(json);
+        return web_json_error(req, "400 Bad Request", "expected {\"page\": \"<id>\"}");
+    }
+    cJSON *config = config_parse();
+    bool known = config && config_find_page(config, id->valuestring);
+    cJSON_Delete(config);
+    if (!known) {
+        cJSON_Delete(json);
+        return web_json_error(req, "404 Not Found", "unknown page");
+    }
+    device_set_page(id->valuestring);
+    httpd_resp_set_type(req, "application/json");
+    esp_err_t err = httpd_resp_sendstr(req, body);
+    cJSON_Delete(json);
+    return err;
+}
+
 /* The last log lines as text from line number `since` (default 0); X-Log-Next is the number to ask for next. When the
  * client's number is beyond ours the host restarted: the answer starts from the oldest line again. */
 static esp_err_t api_log(httpd_req_t *req)
@@ -200,7 +228,7 @@ esp_err_t web_start(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn = httpd_uri_match_wildcard;
-    cfg.max_uri_handlers = 24;
+    cfg.max_uri_handlers = 28;
     cfg.max_open_sockets = 10; /* event streams hold their socket */
     cfg.lru_purge_enable = true;
     cfg.stack_size = 8192;
@@ -215,6 +243,9 @@ esp_err_t web_start(void)
         {.uri = "/api/config", .method = HTTP_GET, .handler = api_config_get},
         {.uri = "/api/config", .method = HTTP_PUT, .handler = api_config_put},
         {.uri = "/api/log", .method = HTTP_GET, .handler = api_log},
+        {.uri = "/api/page", .method = HTTP_POST, .handler = api_page},
+        {.uri = "/api/keys/*", .method = HTTP_POST, .handler = keyfiles_handler},
+        {.uri = "/api/pages/*", .method = HTTP_POST, .handler = keyfiles_handler},
         {.uri = "/api/keys/*", .method = HTTP_GET, .handler = keyfiles_handler},
         {.uri = "/api/keys/*", .method = HTTP_PUT, .handler = keyfiles_handler},
         {.uri = "/api/keys/*", .method = HTTP_DELETE, .handler = keyfiles_handler},

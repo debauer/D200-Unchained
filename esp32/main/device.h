@@ -29,6 +29,12 @@ void device_snapshot(device_state_t *out);
 /* The window of key `index`; false for an unknown key. */
 bool device_key_window(unsigned index, device_key_t *out);
 
+/* Backlight state (level 0-255 while on); the device task sends it to deckd, subscribers get a `brightness` event. */
+void device_set_backlight(int level, bool display_on);
+
+/* Shows page `id` (it must exist): full redraw and a `page` event. */
+void device_set_page(const char *id);
+
 /* JSON for GET /api/info (needs `size` bytes, truncated otherwise); returns the length. */
 size_t device_info_json(char *out, size_t size);
 
