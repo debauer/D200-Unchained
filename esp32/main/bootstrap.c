@@ -102,7 +102,7 @@ static void log_lines(adb_t *a, const char *label, const char *service, size_t c
 static void diagnose(adb_t *a)
 {
     vTaskDelay(pdMS_TO_TICKS(3000));
-    log_lines(a, "diag ps", "shell:ps 2>&1 | head -n 40", 3072);
+    log_lines(a, "diag ps", "shell:ps 2>&1 | grep -v -E ' \\[|COMMAND'", 3072);
     log_lines(a, "diag deckd.log", "shell:tail -n 15 " DEVICE_LOG " 2>&1", 2048);
     log_lines(a, "diag fb", "shell:for f in name virtual_size bits_per_pixel stride state blank; do "
                             "echo $f=$(cat /sys/class/graphics/fb0/$f 2>&1); done; ls -l /dev/fb0 /dev/dri/ 2>&1", 2048);
@@ -112,9 +112,17 @@ static void diagnose(adb_t *a)
     log_lines(a, "diag dmesg", "shell:dmesg | grep -i -E 'drm|fb0|vop|panel|display|backlight|rockchip-drm' | tail -n 20", 4096);
     log_lines(a, "diag openers", "shell:for p in /proc/[0-9]*; do ls -l $p/fd 2>/dev/null | grep -q -E 'fb0|dri/card' && "
                                  "echo $(cat $p/comm) $p; done", 1024);
-    ESP_LOGI(TAG, "fb test: writing a white screen into /dev/fb0 for 3 s");
-    log_lines(a, "diag fb write", "shell:tr '\\000' '\\377' < /dev/zero | head -c 3686400 > /dev/fb0; echo exit:$?", 512);
-    vTaskDelay(pdMS_TO_TICKS(3000));
+    /* Three tries to get something onto the display, each shown for 4 s: tell which one turned the screen white. */
+    ESP_LOGI(TAG, "fb test A: white screen straight into /dev/fb0 (4 s)");
+    log_lines(a, "diag fb A", "shell:head -c 3686400 /dev/zero | tr '\\000' '\\377' > /dev/fb0; echo exit:$?", 512);
+    vTaskDelay(pdMS_TO_TICKS(4000));
+    ESP_LOGI(TAG, "fb test B: unblank, then white (4 s)");
+    log_lines(a, "diag fb B", "shell:echo 0 > /sys/class/graphics/fb0/blank; head -c 3686400 /dev/zero | tr '\\000' '\\377' > /dev/fb0; echo exit:$?", 512);
+    vTaskDelay(pdMS_TO_TICKS(4000));
+    ESP_LOGI(TAG, "fb test C: blank, unblank, then white (4 s)");
+    log_lines(a, "diag fb C", "shell:echo 4 > /sys/class/graphics/fb0/blank; sleep 1; echo 0 > /sys/class/graphics/fb0/blank; "
+                              "head -c 3686400 /dev/zero | tr '\\000' '\\377' > /dev/fb0; echo exit:$?", 512);
+    vTaskDelay(pdMS_TO_TICKS(4000));
 }
 #endif
 
