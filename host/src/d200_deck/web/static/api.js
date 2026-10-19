@@ -44,6 +44,11 @@ export const api = {
   altIcon: (page, i) => raw(`${keyPath(page, i)}/alticon`),
   putAltIcon: (page, i, bytes) => send("PUT", `${keyPath(page, i)}/alticon`, bytes, "application/octet-stream"),
   deleteAltIcon: (page, i) => send("DELETE", `${keyPath(page, i)}/alticon`),
+  // Host log (optional, `log: true` in /api/info): the text from line `since` on and the number to ask for next.
+  async log(since) {
+    const res = await check(await fetch(`/api/log?since=${since}`));
+    return { text: await res.text(), next: Number(res.headers.get("X-Log-Next")) };
+  },
   press: (page, i) => send("POST", `${keyPath(page, i)}/press`),
   mqtt: () => json("/api/mqtt"),
   putMqtt: (settings) => send("PUT", "/api/mqtt", JSON.stringify(settings), "application/json"),

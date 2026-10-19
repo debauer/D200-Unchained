@@ -52,7 +52,7 @@ size_t device_info_json(char *out, size_t size)
     device_state_t s;
     device_snapshot(&s);
     size_t n = append(out, size, 0,
-                      "{\"api\":1,\"host\":\"esp32\",\"connected\":%s,\"screen\":{\"width\":%u,\"height\":%u},\"keys\":[",
+                      "{\"api\":1,\"host\":\"esp32\",\"log\":true,\"connected\":%s,\"screen\":{\"width\":%u,\"height\":%u},\"keys\":[",
                       s.connected ? "true" : "false", s.screen_width ? s.screen_width : 1280,
                       s.screen_height ? s.screen_height : 720);
     for (int i = 0; i < s.key_count; i++) {

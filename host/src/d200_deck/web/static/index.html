@@ -118,6 +118,18 @@
         <p class="log-empty" id="log-empty">&gt; Press keys to trigger actions_</p>
         <div class="log-lines" id="log-lines"></div>
       </div>
+
+      <div class="hostlog" id="hostlog" hidden>
+        <div class="log-head">
+          <span>// Host log <span class="muted" id="hostlog-state"></span></span>
+          <span class="hostlog-actions">
+            <button type="button" class="btn ghost small" id="hostlog-pause">Pause</button>
+            <button type="button" class="btn ghost small" id="hostlog-clear">Clear</button>
+            <button type="button" class="btn outline small" id="hostlog-download">Download</button>
+          </span>
+        </div>
+        <pre class="hostlog-lines" id="hostlog-lines" tabindex="0"></pre>
+      </div>
     </section>
 
     <aside class="editor" id="editor">

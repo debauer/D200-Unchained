@@ -46,6 +46,7 @@ The API can configure actions that the host executes. Therefore:
 | GET | `/api/keys/<index>/alticon` | Raw RGB565 of the second icon (shown while a colour rule matches), `404` if none |
 | PUT | `/api/keys/<index>/alticon` | Store the second icon (body: RGB565, exactly the window size) |
 | DELETE | `/api/keys/<index>/alticon` | Remove the second icon |
+| GET | `/api/log?since=N` | Optional (`log: true` in `/api/info`): the last log lines of the host as text from line number `N` on; the header `X-Log-Next` is the number to ask for next (smaller than the one asked for: the host restarted). The UI shows it as a "Host log" with download |
 | GET | `/api/mqtt` | MQTT broker settings and state (never the password) |
 | PUT | `/api/mqtt` | Set the broker settings; a missing `password` keeps the stored one, `null` clears it |
 | GET | `/api/events` | Server-sent events with key presses |
@@ -71,6 +72,7 @@ All `/api/keys/<index>/...` endpoints also exist per page as
 ```
 
 - `host`: `"linux"` or `"esp32"`.
+- `log` (optional): `true` when the host serves `/api/log`; the UI then shows the host log.
 - `connected`: whether the host is currently connected to `deckd`. Without a
   connection, `screen` and `keys` are the last reported values; before the first
   connection they are the measured D200 grid (`host/src/d200_deck/device/layout.py`).

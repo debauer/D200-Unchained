@@ -8,6 +8,7 @@ import { DeckView, badgeOf } from "./deck.js";
 import { Editor } from "./editor.js";
 import { bindIO } from "./io.js";
 import { BLANK, ROOT, addChild, defaultsOf, children, movePage, pageOf, subtree, withPage, withoutSubtree } from "./model.js";
+import { HostLog } from "./hostlog.js";
 import { MqttView } from "./mqtt.js";
 import { PagesView } from "./pages.js";
 import { toCssColor } from "./rgb565.js";
@@ -19,6 +20,8 @@ import { toast } from "./ui.js";
 import { VariablesView } from "./variables.js";
 
 const $ = (id) => document.getElementById(id);
+
+const hostLog = new HostLog();
 
 const deck = new DeckView({
   keys: $("keys"), dim: $("dim"), led: $("led"), statusLine: $("status-line"),
@@ -266,6 +269,7 @@ async function loadAll() {
   Object.assign(state, { connected: state.info.connected, brightness: state.info.brightness, values: state.info.values });
   variables.render();
   mqtt.load().catch(fail);
+  hostLog.show(Boolean(state.info.log));
   refreshStatus();
   await fontsReady();
   state.keys.clear();

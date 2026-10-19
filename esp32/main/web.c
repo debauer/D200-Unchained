@@ -10,12 +10,14 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "events.h"
+#include "logbuf.h"
 
 static const char *TAG = "web";
 #define WWW "/www"
 #define CONFIG_FILE "/storage/config.json"
 #define CONFIG_TMP "/storage/config.tmp"
 #define MAX_CONFIG 65536
+#define LOG_CHUNK 6144
 #define DEFAULT_CONFIG "{\"version\":2,\"pages\":[{\"id\":\"root\",\"name\":\"Default\",\"parent\":null,\"keys\":[]}]}"
 
 static const struct { const char *ext, *type; } TYPES[] = {
@@ -146,6 +148,29 @@ static esp_err_t api_config_put(httpd_req_t *req)
     return err;
 }
 
+/* The last log lines as text from line number `since` (default 0); X-Log-Next is the number to ask for next. When the
+ * client's number is beyond ours the host restarted: the answer starts from the oldest line again. */
+static esp_err_t api_log(httpd_req_t *req)
+{
+    uint32_t since = 0;
+    char query[32], value[12];
+    if (httpd_req_get_url_query_str(req, query, sizeof query) == ESP_OK &&
+        httpd_query_key_value(query, "since", value, sizeof value) == ESP_OK)
+        since = strtoul(value, NULL, 10);
+    char *text = malloc(LOG_CHUNK);
+    if (!text) return json_error(req, "500 Internal Server Error", "out of memory");
+    uint32_t next;
+    size_t n = logbuf_read(since, text, LOG_CHUNK, &next);
+    char header[12];
+    snprintf(header, sizeof header, "%lu", (unsigned long)next);
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(req, "X-Log-Next", header);
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    esp_err_t err = httpd_resp_send(req, text, n);
+    free(text);
+    return err;
+}
+
 /* MQTT is not part of the ESP32 host yet: report it as off. */
 static esp_err_t api_mqtt(httpd_req_t *req)
 {
@@ -182,6 +207,7 @@ esp_err_t web_start(void)
         {.uri = "/api/events", .method = HTTP_GET, .handler = events_handler},
         {.uri = "/api/config", .method = HTTP_GET, .handler = api_config_get},
         {.uri = "/api/config", .method = HTTP_PUT, .handler = api_config_put},
+        {.uri = "/api/log", .method = HTTP_GET, .handler = api_log},
         {.uri = "/api/mqtt", .method = HTTP_GET, .handler = api_mqtt},
         {.uri = "/api/mqtt", .method = HTTP_PUT, .handler = api_mqtt},
         {.uri = "/api/*", .method = HTTP_GET, .handler = api_missing},
