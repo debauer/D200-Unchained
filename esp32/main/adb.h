@@ -33,6 +33,9 @@ typedef struct {
 #define A_CLSE 0x45534c43
 #define A_WRTE 0x45545257
 
+/* The message trace of the bootstrap would flood the log once the ping loop runs. */
+void adb_set_trace(bool on);
+
 /* Handshake after the interface is claimed. */
 esp_err_t adb_connect(adb_t *a);
 

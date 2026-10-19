@@ -138,6 +138,7 @@ esp_err_t device_run(adb_t *a)
     ESP_LOGI(TAG, "connected: %ux%u, %u keys", s_state.screen_width, s_state.screen_height, s_state.key_count);
     d->on_key = publish_key;
     set_connected(true);
+    adb_set_trace(false); /* the ping loop would flood the log */
     /* No long wait for events: the IDF USB host does not enforce transfer timeouts, and one IN transfer
      * pending for seconds failed with a WiFi running. A ping every PING_MS keeps every transfer short; key
      * events arrive between the replies. */
@@ -146,6 +147,7 @@ esp_err_t device_run(adb_t *a)
         if (err != ESP_OK) break;
         vTaskDelay(pdMS_TO_TICKS(PING_MS));
     }
+    adb_set_trace(true);
     set_connected(false);
     free(d);
     return err;

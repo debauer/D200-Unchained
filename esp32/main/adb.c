@@ -82,9 +82,17 @@ static const char *name_of(uint32_t cmd)
     }
 }
 
+static bool s_trace = true;
+
+void adb_set_trace(bool on)
+{
+    s_trace = on;
+}
+
 static void trace(const char *dir, const adb_msg_t *m)
 {
 #ifdef CONFIG_D200_DEBUG
+    if (!s_trace) return;
     ESP_LOGI(TAG, "%s %s arg0=%lu arg1=%lu len=%lu", dir, name_of(m->command), (unsigned long)m->arg0,
              (unsigned long)m->arg1, (unsigned long)m->length);
 #endif
