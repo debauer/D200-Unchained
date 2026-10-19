@@ -10,6 +10,7 @@
 #include "device.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "draw.h"
 #include "events.h"
 #include "keyfiles.h"
 #include "logbuf.h"
@@ -131,15 +132,22 @@ static esp_err_t api_config_put(httpd_req_t *req)
         free(body);
         return web_json_error(req, "400 Bad Request", problem);
     }
+    cJSON *before = config_parse(); /* to see which keys change */
     if (!config_store(body, got)) {
+        cJSON_Delete(before);
         ESP_LOGE(TAG, "cannot store the config");
         free(body);
         return web_json_error(req, "500 Internal Server Error", "cannot store the config");
     }
     cJSON *saved = cJSON_Parse(body);
-    if (saved) config_purge_images(saved); /* images of deleted pages */
+    if (saved) {
+        config_purge_images(saved); /* images of deleted pages */
+        device_state_t state;
+        device_snapshot(&state);
+        draw_request_changes(before, saved, state.page); /* only what looks different */
+    }
     cJSON_Delete(saved);
-    device_request_redraw(-1);
+    cJSON_Delete(before);
     httpd_resp_set_type(req, "application/json");
     esp_err_t err = httpd_resp_send(req, body, got);
     free(body);

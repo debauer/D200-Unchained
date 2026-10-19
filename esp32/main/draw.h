@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cJSON.h"
 #include "deckd.h"
 #include "device.h"
 
@@ -7,4 +8,8 @@
  * when `clear`): the stored image of a key, else a
  * fill with its colour (key, else page, else `background`). Text, placeholders and the clock follow with the
  * renderer. */
+/* Asks for a redraw of what differs between two configurations on `page`: the whole page when something shared
+ * changed (background, the page's colour, the page missing), else only the keys whose look changed. */
+void draw_request_changes(const cJSON *before, const cJSON *after, const char *page);
+
 esp_err_t draw_page(deckd_t *d, const device_state_t *state, uint32_t keys, bool clear);

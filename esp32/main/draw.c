@@ -75,3 +75,28 @@ esp_err_t draw_page(deckd_t *d, const device_state_t *state, uint32_t keys, bool
     cJSON_Delete(config);
     return err;
 }
+
+/* The parts of a key that decide how it is drawn. */
+static bool same_text(const cJSON *a, const cJSON *b, const char *name)
+{
+    const cJSON *x = a ? cJSON_GetObjectItem(a, name) : NULL, *y = b ? cJSON_GetObjectItem(b, name) : NULL;
+    if (!cJSON_IsString(x) || !cJSON_IsString(y)) return !cJSON_IsString(x) && !cJSON_IsString(y);
+    return strcmp(x->valuestring, y->valuestring) == 0;
+}
+
+static bool same_look(const cJSON *a, const cJSON *b)
+{
+    return same_text(a, b, "color") && same_text(a, b, "image");
+}
+
+void draw_request_changes(const cJSON *before, const cJSON *after, const char *page_id)
+{
+    const cJSON *pa = before ? config_find_page(before, page_id) : NULL, *pb = config_find_page(after, page_id);
+    if (!pb || !pa || !same_text(before, after, "background") || !same_text(pa, pb, "color")) {
+        device_request_redraw(-1);
+        return;
+    }
+    for (int i = 0; i < 32; i++) { /* keys of both: one that vanished or appeared counts as changed */
+        if (!same_look(config_find_key(pa, i), config_find_key(pb, i))) device_request_redraw(i);
+    }
+}
