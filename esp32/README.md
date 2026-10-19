@@ -25,7 +25,7 @@ and turn it off again if the D200 stops answering).
 
 ESP32-S3 devkit with two USB-C ports: **COM** (USB-UART, to the PC for flashing and the log) and
 **USB-OTG** (to the D200). The solder jumpers `USB-OTG` and `IN-OUT` decide how the OTG port is
-powered; check them against the schematic of your board revision. The flash layout assumes 8 MB or more.
+powered; check them against the schematic of your board revision. The flash layout assumes 16 MB (N16R8): 3 MB app, 1 MB web UI, about 12 MB for images and configuration (`partitions.csv`).
 
 ## Requirements
 
