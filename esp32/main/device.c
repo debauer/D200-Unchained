@@ -14,7 +14,7 @@
 
 static const char *TAG = "device";
 #define START_BRIGHTNESS 200
-#define IDLE_MS 250
+#define PING_MS 100
 
 static device_state_t s_state = {.brightness = START_BRIGHTNESS, .display_on = true, .page = "root"};
 static SemaphoreHandle_t s_lock;
@@ -92,6 +92,13 @@ static uint16_t u16(const uint8_t *p)
     return p[0] | p[1] << 8;
 }
 
+static void publish_key(uint16_t index, bool pressed)
+{
+    char json[64];
+    snprintf(json, sizeof json, "{\"index\":%u,\"pressed\":%s}", index, pressed ? "true" : "false");
+    events_publish("key", json);
+}
+
 /* INFO payload: u16 version, u16 width, u16 height, u8 count, count * (6 x u16). */
 static esp_err_t read_info(const uint8_t *p, size_t n)
 {
@@ -129,16 +136,15 @@ esp_err_t device_run(adb_t *a)
         return err;
     }
     ESP_LOGI(TAG, "connected: %ux%u, %u keys", s_state.screen_width, s_state.screen_height, s_state.key_count);
+    d->on_key = publish_key;
     set_connected(true);
+    /* No long wait for events: the IDF USB host does not enforce transfer timeouts, and one IN transfer
+     * pending for seconds failed with a WiFi running. A ping every PING_MS keeps every transfer short; key
+     * events arrive between the replies. */
     while (usb_adb_device_present()) {
-        err = deckd_wait_frame(d, IDLE_MS, &type, frame, sizeof frame, &n);
-        if (err == ESP_ERR_TIMEOUT) continue;
+        err = deckd_request(d, DECKD_PING, NULL, 0, &type, frame, sizeof frame, &n);
         if (err != ESP_OK) break;
-        if (type == DECKD_KEY_EVENT && n >= 3) {
-            char json[64];
-            snprintf(json, sizeof json, "{\"index\":%u,\"pressed\":%s}", u16(frame), frame[2] ? "true" : "false");
-            events_publish("key", json);
-        }
+        vTaskDelay(pdMS_TO_TICKS(PING_MS));
     }
     set_connected(false);
     free(d);

@@ -20,7 +20,7 @@ static void xfer_done(usb_transfer_t *x)
     xSemaphoreGive((SemaphoreHandle_t)x->context);
 }
 
-static esp_err_t bulk_to(adb_t *a, uint8_t ep, void *data, size_t len, size_t *actual, int timeout_ms, bool quiet)
+static esp_err_t bulk(adb_t *a, uint8_t ep, void *data, size_t len, size_t *actual)
 {
     usb_transfer_t *x;
     esp_err_t err = usb_host_transfer_alloc(len, 0, &x);
@@ -30,15 +30,13 @@ static esp_err_t bulk_to(adb_t *a, uint8_t ep, void *data, size_t len, size_t *a
     x->device_handle = a->dev;
     x->bEndpointAddress = ep;
     x->num_bytes = len;
-    x->timeout_ms = timeout_ms;
+    x->timeout_ms = XFER_TIMEOUT_MS; /* not enforced by the IDF USB host (documented as unsupported) */
     x->callback = xfer_done;
     x->context = done;
     err = usb_host_transfer_submit(x);
     if (err == ESP_OK) {
         xSemaphoreTake(done, portMAX_DELAY);
-        if (x->status == USB_TRANSFER_STATUS_TIMED_OUT && quiet) {
-            err = ESP_ERR_TIMEOUT;
-        } else if (x->status != USB_TRANSFER_STATUS_COMPLETED) {
+        if (x->status != USB_TRANSFER_STATUS_COMPLETED) {
             ESP_LOGW(TAG, "transfer on ep 0x%02x: status %d (%u of %u bytes)", ep, x->status,
                      (unsigned)x->actual_num_bytes, (unsigned)len);
             err = ESP_FAIL;
@@ -50,11 +48,6 @@ static esp_err_t bulk_to(adb_t *a, uint8_t ep, void *data, size_t len, size_t *a
     vSemaphoreDelete(done);
     usb_host_transfer_free(x);
     return err;
-}
-
-static esp_err_t bulk(adb_t *a, uint8_t ep, void *data, size_t len, size_t *actual)
-{
-    return bulk_to(a, ep, data, len, actual, XFER_TIMEOUT_MS, false);
 }
 
 static esp_err_t rx_read(adb_t *a, uint8_t *dst, size_t n)
@@ -106,17 +99,6 @@ esp_err_t adb_send_msg(adb_t *a, uint32_t cmd, uint32_t arg0, uint32_t arg1, con
     esp_err_t err = bulk(a, a->out_ep, &m, sizeof m, NULL);
     if (err == ESP_OK && len) err = bulk(a, a->out_ep, (void *)data, len, NULL);
     return err;
-}
-
-/* Like adb_recv_msg, but returns ESP_ERR_TIMEOUT (quietly) when nothing arrives within `ms`. */
-esp_err_t adb_recv_msg_wait(adb_t *a, adb_msg_t *m, int ms)
-{
-    if (a->rx_pos == a->rx_len) {
-        a->rx_pos = a->rx_len = 0;
-        esp_err_t err = bulk_to(a, a->in_ep, a->rx, ADB_RX_CHUNK, &a->rx_len, ms, true);
-        if (err != ESP_OK) return err;
-    }
-    return adb_recv_msg(a, m);
 }
 
 /* Reads one message; its payload lands in a->buf. */

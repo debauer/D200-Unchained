@@ -18,6 +18,7 @@ static const char *TAG = "adb";
 #define ADB_CLASS 0xFF
 #define ADB_SUBCLASS 0x42
 #define ADB_PROTOCOL 0x01
+#define USB_CORE 1
 #define SETTLE_MS 500
 #define REAPPEAR_MS 1500
 
@@ -132,6 +133,21 @@ static void adb_task(void *arg)
     }
 }
 
+/* Runs on core 1: the USB interrupt is allocated on the core that installs the host, and WiFi lives on core 0. */
+static void usb_init_task(void *arg)
+{
+    const usb_host_config_t host = {.intr_flags = ESP_INTR_FLAG_LEVEL1};
+    ESP_ERROR_CHECK(usb_host_install(&host));
+    const usb_host_client_config_t client = {
+        .is_synchronous = false, .max_num_event_msg = 5, .async = {.client_event_callback = client_event},
+    };
+    ESP_ERROR_CHECK(usb_host_client_register(&client, &s_client));
+    xTaskCreatePinnedToCore(lib_task, "usb_lib", 4096, NULL, 20, NULL, USB_CORE);
+    xTaskCreatePinnedToCore(client_task, "usb_client", 4096, NULL, 19, NULL, USB_CORE);
+    xTaskCreatePinnedToCore(adb_task, "adb", 6144, NULL, 5, NULL, USB_CORE);
+    vTaskDelete(NULL);
+}
+
 void usb_adb_start(void)
 {
     s_new_dev = xSemaphoreCreateBinary();
@@ -139,15 +155,7 @@ void usb_adb_start(void)
     static const char *const usb_tags[] = {"HCD", "USBH", "USB HOST", "HUB", "HAL"};
     for (size_t i = 0; i < sizeof usb_tags / sizeof usb_tags[0]; i++) esp_log_level_set(usb_tags[i], ESP_LOG_DEBUG);
 #endif
-    const usb_host_config_t host = {.intr_flags = ESP_INTR_FLAG_LEVEL1};
-    ESP_ERROR_CHECK(usb_host_install(&host));
-    const usb_host_client_config_t client = {
-        .is_synchronous = false, .max_num_event_msg = 5, .async = {.client_event_callback = client_event},
-    };
-    ESP_ERROR_CHECK(usb_host_client_register(&client, &s_client));
-    xTaskCreate(lib_task, "usb_lib", 4096, NULL, 20, NULL);
-    xTaskCreate(client_task, "usb_client", 4096, NULL, 19, NULL);
-    xTaskCreate(adb_task, "adb", 6144, NULL, 5, NULL);
+    xTaskCreatePinnedToCore(usb_init_task, "usb_init", 4096, NULL, 5, NULL, USB_CORE);
 }
 
 bool usb_adb_device_present(void)

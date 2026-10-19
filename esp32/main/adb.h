@@ -46,4 +46,3 @@ esp_err_t adb_push(adb_t *a, const void *data, size_t len, const char *remote, u
 /* Used by adb_sync.c */
 esp_err_t adb_send_msg(adb_t *a, uint32_t cmd, uint32_t arg0, uint32_t arg1, const void *data, size_t len);
 esp_err_t adb_recv_msg(adb_t *a, adb_msg_t *m);
-esp_err_t adb_recv_msg_wait(adb_t *a, adb_msg_t *m, int ms);
