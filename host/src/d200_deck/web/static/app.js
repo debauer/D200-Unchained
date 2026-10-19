@@ -11,6 +11,7 @@ import { BLANK, ROOT, addChild, defaultsOf, children, movePage, pageOf, subtree,
 import { HostLog } from "./hostlog.js";
 import { MqttView } from "./mqtt.js";
 import { PagesView } from "./pages.js";
+import { StorageView } from "./storage.js";
 import { toCssColor } from "./rgb565.js";
 import {
   compose, ensureIcon, ensurePageImages, entryOf, forgetPages, lookOf, refreshDynamicKeys, refreshPreview, setEntry, slot, state,
@@ -22,6 +23,7 @@ import { VariablesView } from "./variables.js";
 const $ = (id) => document.getElementById(id);
 
 const hostLog = new HostLog();
+const storage = new StorageView();
 
 const deck = new DeckView({
   keys: $("keys"), dim: $("dim"), led: $("led"), statusLine: $("status-line"),
@@ -270,6 +272,7 @@ async function loadAll() {
   variables.render();
   mqtt.load().catch(fail);
   hostLog.show(Boolean(state.info.log));
+  storage.show(state.info.storage);
   refreshStatus();
   await fontsReady();
   state.keys.clear();

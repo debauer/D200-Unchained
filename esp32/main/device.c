@@ -110,12 +110,14 @@ size_t device_info_json(char *out, size_t size)
         n = append(out, size, n, "%s{\"index\":%u,\"code\":%u,\"x\":%u,\"y\":%u,\"width\":%u,\"height\":%u}", i ? "," : "",
                    s.keys[i].index, s.keys[i].code, s.keys[i].x, s.keys[i].y, s.keys[i].width, s.keys[i].height);
     }
-    char *values = device_values_json();
+    char *values = device_values_json(), storage[72] = "";
+    size_t total, used;
+    if (config_storage(&total, &used)) snprintf(storage, sizeof storage, "\"storage\":{\"total\":%u,\"used\":%u},", (unsigned)total, (unsigned)used);
     n = append(out, size, n,
-               "],\"actions\":[\"mqtt\",\"bl_down\",\"bl_up\",\"disp_off\",\"disp_on\",\"page\",\"back\"],"
+               "],%s\"actions\":[\"mqtt\",\"bl_down\",\"bl_up\",\"disp_off\",\"disp_on\",\"page\",\"back\"],"
                "\"brightness\":{\"level\":%d,\"percent\":%d,\"display_on\":%s},\"page\":\"%s\",\"values\":%s,"
                "\"variable_types\":[\"mqtt\"]}",
-               s.brightness, percent(s.brightness), s.display_on ? "true" : "false", s.page, values ? values : "{}");
+               storage, s.brightness, percent(s.brightness), s.display_on ? "true" : "false", s.page, values ? values : "{}");
     free(values);
     return n;
 }

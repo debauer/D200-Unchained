@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <dirent.h>
+#include "esp_littlefs.h"
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -116,4 +117,9 @@ void config_purge_images(const cJSON *root)
         unlink(path);
     }
     closedir(dir);
+}
+
+bool config_storage(size_t *total, size_t *used)
+{
+    return esp_littlefs_info("storage", total, used) == ESP_OK;
 }

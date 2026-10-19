@@ -73,6 +73,8 @@ All `/api/keys/<index>/...` endpoints also exist per page as
 
 - `host`: `"linux"` or `"esp32"`.
 - `log` (optional): `true` when the host serves `/api/log`; the UI then shows the host log.
+- `storage` (optional): `{"total": <bytes>, "used": <bytes>}`, the host's memory for key images and the configuration
+  (ESP32). The UI shows a meter when it is there.
 - `connected`: whether the host is currently connected to `deckd`. Without a
   connection, `screen` and `keys` are the last reported values; before the first
   connection they are the measured D200 grid (`host/src/d200_deck/device/layout.py`).

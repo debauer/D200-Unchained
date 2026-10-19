@@ -28,3 +28,6 @@ void config_image_name(char *out, size_t size, const char *page, unsigned index,
 
 /* Removes the image files of pages that are no longer in `root`. */
 void config_purge_images(const cJSON *root);
+
+/* Size and use of the storage partition in bytes; false if it cannot be read. */
+bool config_storage(size_t *total, size_t *used);
