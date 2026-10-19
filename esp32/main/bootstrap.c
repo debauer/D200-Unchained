@@ -112,19 +112,17 @@ static void diagnose(adb_t *a)
     log_lines(a, "diag dmesg", "shell:dmesg | grep -i -E 'drm|fb0|vop|panel|display|backlight|rockchip-drm' | tail -n 20", 4096);
     log_lines(a, "diag openers", "shell:for p in /proc/[0-9]*; do ls -l $p/fd 2>/dev/null | grep -q -E 'fb0|dri/card' && "
                                  "echo $(cat $p/comm) $p; done", 1024);
-    /* Three tries to get something onto the display, each shown for 4 s: tell which one turned the screen white. */
-    ESP_LOGI(TAG, "fb test A: white screen straight into /dev/fb0 (4 s)");
-    log_lines(a, "diag fb A", "shell:head -c 3686400 /dev/zero | tr '\\000' '\\377' > /dev/fb0; echo exit:$?", 512);
-    vTaskDelay(pdMS_TO_TICKS(4000));
-    ESP_LOGI(TAG, "fb test B: unblank, then white (4 s)");
-    log_lines(a, "diag fb B", "shell:echo 0 > /sys/class/graphics/fb0/blank; head -c 3686400 /dev/zero | tr '\\000' '\\377' > /dev/fb0; echo exit:$?", 512);
-    vTaskDelay(pdMS_TO_TICKS(4000));
-    ESP_LOGI(TAG, "fb test C: blank, unblank, then white (4 s)");
-    log_lines(a, "diag fb C", "shell:echo 4 > /sys/class/graphics/fb0/blank; sleep 1; echo 0 > /sys/class/graphics/fb0/blank; "
-                              "head -c 3686400 /dev/zero | tr '\\000' '\\377' > /dev/fb0; echo exit:$?", 512);
-    vTaskDelay(pdMS_TO_TICKS(4000));
 }
 #endif
+
+/* The display keeps showing the boot picture until something write()s to /dev/fb0: deckd draws through mmap,
+ * which does not do that on its own (seen with the vendor app killed during its start-up screen). One
+ * black full-screen write makes the framebuffer the picture; deckd's drawing shows after that. */
+static void wake_framebuffer(adb_t *a, char *out, size_t cap)
+{
+    adb_exec(a, "shell:head -c 3686400 /dev/zero > /dev/fb0; echo wake:$?", out, cap);
+    ESP_LOGI(TAG, "framebuffer: %s", out);
+}
 
 /* A broken link makes every adb_exec return an empty answer: "not listening", "not installed". Check it after
  * each step so that the bootstrap stops instead of acting on those answers. */
@@ -156,9 +154,10 @@ esp_err_t bootstrap_deckd(adb_t *a)
     if (LINK_LOST(a)) goto lost;
     if (up) {
         ESP_LOGI(TAG, "deckd already listens on port %d", DECKD_PORT);
-        err = ESP_OK;
+        wake_framebuffer(a, out, 512);
+        err = LINK_LOST(a) ? ESP_FAIL : ESP_OK;
 #ifdef CONFIG_D200_DEBUG
-        diagnose(a);
+        if (err == ESP_OK) diagnose(a);
 #endif
         goto done;
     }
@@ -180,9 +179,10 @@ esp_err_t bootstrap_deckd(adb_t *a)
     for (int i = 0; i < START_CHECKS; i++) {
         if (deckd_listening(a, out, 512)) {
             ESP_LOGI(TAG, "deckd is listening on the device");
-            err = ESP_OK;
+            wake_framebuffer(a, out, 512);
+            err = LINK_LOST(a) ? ESP_FAIL : ESP_OK;
 #ifdef CONFIG_D200_DEBUG
-            diagnose(a);
+            if (err == ESP_OK) diagnose(a);
 #endif
             goto done;
         }
