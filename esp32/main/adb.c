@@ -9,7 +9,7 @@
 #include "freertos/semphr.h"
 
 static const char *TAG = "adb";
-#define XFER_TIMEOUT_MS 10000 /* a shell command may print late */
+#define XFER_TIMEOUT_MS 3000 /* commands print within ~1 s (sleep 1); a dead link is noticed after this */
 #define ADB_VERSION 0x01000000
 #define LOCAL_ID 1
 

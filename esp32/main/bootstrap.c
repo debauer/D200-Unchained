@@ -89,10 +89,10 @@ esp_err_t bootstrap_deckd(adb_t *a)
     char *out = malloc(512);
     if (!out) return ESP_ERR_NO_MEM;
     /* Commands that scan /proc (killall, pidof) seem to break the USB link while the vendor app runs, likely
-     * through a load and clock step that dips the 5 V. Pin the CPU to its lowest clock first, with shell
+     * through a load and clock step that dips the 5 V. Pin the CPU to its lowest clock first (the governor is left alone: powersave is not available), with shell
      * builtins only (no new process). */
     esp_err_t err = adb_exec(a, "shell:d=/sys/devices/system/cpu/cpu0/cpufreq; read lo < $d/cpuinfo_min_freq; "
-                                "echo powersave > $d/scaling_governor; echo $lo > $d/scaling_max_freq; "
+                                "echo $lo > $d/scaling_max_freq; "
                                 "read g < $d/scaling_governor; read f < $d/scaling_cur_freq; echo cpu:$g:$f", out, 512);
     if (err == ESP_OK) ESP_LOGI(TAG, "%s", out);
     if (err == ESP_OK) err = stop_vendor(a, out, 512);
