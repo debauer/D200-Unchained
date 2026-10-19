@@ -9,13 +9,14 @@ from dataclasses import dataclass, field
 
 import pytest
 
+from d200_deck.constants import PROTOCOL_VERSION
 from d200_deck.device.protocol import Msg, encode_frame
 
 Reply = list[tuple[Msg, bytes]]
 Handler = Callable[[int, bytes], Reply]
 
 INFO_PAYLOAD = (
-    struct.pack("<HHHB", 4, 1280, 720, 2)
+    struct.pack("<HHHB", PROTOCOL_VERSION, 1280, 720, 2)
     + struct.pack("<6H", 0, 29, 11, 3, 196, 196)
     + struct.pack("<6H", 1, 30, 791, 521, 456, 196)
 )

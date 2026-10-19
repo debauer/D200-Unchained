@@ -4,6 +4,7 @@ import struct
 
 import pytest
 
+from d200_deck.constants import PROTOCOL_VERSION
 from d200_deck.constants import MAX_PAYLOAD
 from d200_deck.device.protocol import (
     Color,
@@ -49,7 +50,7 @@ def test_frame_roundtrip_and_limit() -> None:
 
 def test_parse_info() -> None:
     info = parse_info(INFO_PAYLOAD)
-    assert (info.version, info.width, info.height) == (4, 1280, 720)
+    assert (info.version, info.width, info.height) == (PROTOCOL_VERSION, 1280, 720)
     assert info.key(1).width == 456
     assert info.key(0).code == 29
     with pytest.raises(KeyError):
