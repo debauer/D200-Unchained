@@ -144,7 +144,7 @@ static void usb_init_task(void *arg)
     ESP_ERROR_CHECK(usb_host_client_register(&client, &s_client));
     xTaskCreatePinnedToCore(lib_task, "usb_lib", 4096, NULL, 20, NULL, USB_CORE);
     xTaskCreatePinnedToCore(client_task, "usb_client", 4096, NULL, 19, NULL, USB_CORE);
-    xTaskCreatePinnedToCore(adb_task, "adb", 6144, NULL, 5, NULL, USB_CORE);
+    xTaskCreatePinnedToCore(adb_task, "adb", 16384, NULL, 5, NULL, USB_CORE);
     vTaskDelete(NULL);
 }
 
