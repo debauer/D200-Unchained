@@ -1,0 +1,11 @@
+menu "D200 host"
+
+    config D200_WIFI_SSID
+        string "WiFi SSID"
+        default ""
+
+    config D200_WIFI_PASSWORD
+        string "WiFi password"
+        default ""
+
+endmenu
