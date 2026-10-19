@@ -3,4 +3,13 @@ name = "d200-esp32"
 version = "0.0.0"
 description = "Build tooling for the ESP32-S3 host firmware (PlatformIO)"
 requires-python = ">=3.10,<3.14"
-dependencies = ["platformio>=6.1"]
+dependencies = [
+    "platformio>=6.1",
+    # run by PlatformIO's esptool.py, which needs them in this environment
+    "intelhex",
+    "bitstring>=3.1.6,!=4.2.0",
+    "ecdsa>=0.16.0",
+    "reedsolo>=1.5.3,<1.8",
+    "pyyaml>=5.1",
+    "cryptography",
+]
