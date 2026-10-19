@@ -217,7 +217,8 @@ static void copy_field(char *out, size_t size, const cJSON *v, const char *field
 
 void mqtt_configure(const cJSON *config)
 {
-    variable_t next[MAX_VARS];
+    variable_t *next = malloc(sizeof *next * MAX_VARS); /* too big for the stack of the main task */
+    if (!next) return;
     int count = 0;
     const cJSON *v;
     cJSON_ArrayForEach(v, cJSON_GetObjectItem(config, "variables")) {
@@ -254,6 +255,7 @@ void mqtt_configure(const cJSON *config)
     memcpy(s_vars, next, (size_t)count * sizeof next[0]);
     s_var_count = count;
     xSemaphoreGive(s_lock);
+    free(next);
     if (changed) values_changed();
 }
 
