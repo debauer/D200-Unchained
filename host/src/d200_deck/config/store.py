@@ -10,9 +10,12 @@ from typing import Any
 
 from d200_deck.config.model import (
     ACTION_COMMAND,
+    ACTION_MQTT,
     ACTION_PAGE,
     CONFIG_VERSION,
     VARIABLE_COMMAND,
+    VARIABLE_MQTT,
+    ColorRule,
     DeckConfig,
     KeyConfig,
     Page,
@@ -25,6 +28,12 @@ from d200_deck.errors import ConfigError
 
 def _hex(c: Color) -> str:
     return f"{c.r:02x}{c.g:02x}{c.b:02x}"
+
+
+def _rule_json(r: ColorRule) -> dict[str, Any]:
+    entry: dict[str, Any] = {"variable": r.variable, "value": r.value}
+    entry.update({n: _hex(c) for n, c in (("color", r.color), ("label_color", r.label_color)) if c is not None})
+    return entry
 
 
 def key_to_json(k: KeyConfig) -> dict[str, Any]:
@@ -43,7 +52,11 @@ def key_to_json(k: KeyConfig) -> dict[str, Any]:
             action["argv"] = list(k.action.argv)
         elif k.action.type == ACTION_PAGE:
             action["target"] = k.action.target
+        elif k.action.type == ACTION_MQTT:
+            action.update(topic=k.action.topic, payload=k.action.payload, retain=k.action.retain, qos=k.action.qos)
         entry["action"] = action
+    if k.rules:
+        entry["rules"] = [_rule_json(r) for r in k.rules]
     return entry
 
 
@@ -51,6 +64,8 @@ def _variable_json(v: Variable) -> dict[str, Any]:
     entry: dict[str, Any] = {**v.extra, "name": v.name, "type": v.type, "interval": v.interval}
     if v.type == VARIABLE_COMMAND:
         entry["command"] = v.command
+    elif v.type == VARIABLE_MQTT:
+        entry.update(topic=v.topic, json_path=v.json_path)
     return entry
 
 

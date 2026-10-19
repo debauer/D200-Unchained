@@ -11,6 +11,7 @@ from d200_deck.errors import UnknownPageError
 CONFIG_VERSION = 2
 ROOT = "root"
 ACTION_COMMAND = "command"
+ACTION_MQTT = "mqtt"  # publish a message
 # Device actions without parameters, executed by the host service.
 ACTION_BL_UP = "bl_up"
 ACTION_BL_DOWN = "bl_down"
@@ -24,6 +25,7 @@ NAV_ACTIONS = (ACTION_PAGE, ACTION_BACK)
 LABEL_POSITIONS = ("top", "center", "bottom")
 LABEL_SIZE_RANGE = (50, 250)
 VARIABLE_COMMAND = "command"
+VARIABLE_MQTT = "mqtt"  # latest message on a topic
 DEFAULT_INTERVAL_S = 10
 BLACK = Color(0, 0, 0)
 WHITE = Color(255, 255, 255)
@@ -33,8 +35,8 @@ WHITE = Color(255, 255, 255)
 class Action:
     """What a key press triggers.
 
-    `command` runs `argv`; `page` opens `target` (empty: not chosen yet); the other
-    known types take no parameters. Types this host does not know (e.g. `http`
+    `command` runs `argv`; `page` opens `target` (empty: not chosen yet); `mqtt`
+    publishes `payload` on `topic`; the other known types take no parameters. Types this host does not know (e.g. `http`
     from an ESP32 config) are kept with their fields in `extra`, so the config
     survives a round trip, and are ignored on press."""
 
@@ -42,6 +44,20 @@ class Action:
     argv: tuple[str, ...] = ()
     target: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
+    topic: str = ""
+    payload: str = ""
+    retain: bool = False
+    qos: int = 0
+
+
+@dataclass(frozen=True)
+class ColorRule:
+    """Colours a key shows while `variable` has exactly `value` (first matching rule wins)."""
+
+    variable: str
+    value: str
+    color: Color | None = None
+    label_color: Color | None = None
 
 
 @dataclass(frozen=True)
@@ -54,6 +70,7 @@ class KeyConfig:
     label_color: Color | None = None  # None: the page's default; used when the key image is rendered
     label_pos: str = "bottom"
     label_size: int = 100  # percent of the automatic text size
+    rules: tuple[ColorRule, ...] = ()  # colours that depend on variable values
 
 
 @dataclass(frozen=True)
@@ -69,14 +86,16 @@ class Variable:
     """A value for `{name}` placeholders in key text.
 
     `command` is a shell command line run every `interval` seconds; its stdout is the
-    value. Types this
-    host does not know (e.g. `mqtt` from an ESP32 config) are kept in `extra`."""
+    value. `mqtt` shows the latest message on `topic` (`json_path`: a dotted path into a JSON
+    message). Types this host does not know are kept in `extra`."""
 
     name: str
     type: str = VARIABLE_COMMAND
     command: str = ""
     interval: int = DEFAULT_INTERVAL_S
     extra: dict[str, Any] = field(default_factory=dict)
+    topic: str = ""
+    json_path: str = ""
 
 
 @dataclass(frozen=True)

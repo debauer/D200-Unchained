@@ -24,6 +24,7 @@ VARS = {
     "variables": [
         {"name": "cpu", "type": "command", "command": "echo 42", "interval": 5},
         {"name": "lamp", "type": "mqtt", "topic": "home/lamp", "interval": 30},
+        {"name": "other", "type": "zigbee", "id": "x"},
     ]
 }
 
@@ -37,7 +38,8 @@ def test_variables_roundtrip_and_unknown_types_kept() -> None:
     cfg = cfgmod.parse(VARS)
     assert cfg.variables == (
         Variable("cpu", "command", "echo 42", 5),
-        Variable("lamp", "mqtt", interval=30, extra={"topic": "home/lamp"}),
+        Variable("lamp", "mqtt", interval=30, topic="home/lamp"),
+        Variable("other", "zigbee", interval=10, extra={"id": "x"}),
     )
     assert cfgmod.parse(cfgmod.to_json(cfg)) == cfg
     assert cfgmod.parse({}).variables == ()

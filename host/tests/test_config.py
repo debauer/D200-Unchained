@@ -216,3 +216,71 @@ def test_page_default_colors_apply_to_unset_and_empty_keys() -> None:
 def test_invalid_page_default_color() -> None:
     with pytest.raises(ConfigError, match=r"pages\[0\].*color"):
         cfgmod.parse({"pages": [{"id": "root", "color": "zz"}]})
+
+
+MQTT = {
+    "variables": [{"name": "light", "type": "mqtt", "topic": "home/light", "json_path": "state.power"}],
+    "pages": [
+        {
+            "id": "root",
+            "keys": [
+                {
+                    "index": 0,
+                    "action": {
+                        "type": "mqtt",
+                        "topic": "home/light/set",
+                        "payload": "toggle",
+                        "retain": True,
+                        "qos": 1,
+                    },
+                    "rules": [
+                        {"variable": "light", "value": "ON", "color": "ffcc00", "label_color": "000000"},
+                        {"variable": "light", "value": "OFF"},
+                    ],
+                }
+            ],
+        }
+    ],
+}
+
+
+def test_mqtt_action_variable_and_rules_roundtrip() -> None:
+    cfg = cfgmod.parse(MQTT)
+    key = cfg.stored_key(0)
+    assert key.action == Action("mqtt", topic="home/light/set", payload="toggle", retain=True, qos=1)
+    assert key.rules[0] == cfgmod.ColorRule("light", "ON", Color(255, 204, 0), Color(0, 0, 0))
+    assert key.rules[1] == cfgmod.ColorRule("light", "OFF")
+    assert cfg.variables[0].topic == "home/light" and cfg.variables[0].json_path == "state.power"
+    assert cfgmod.parse(cfgmod.to_json(cfg)) == cfg
+    assert (
+        "rules"
+        not in cfgmod.to_json(cfgmod.parse({"pages": [{"id": "root", "keys": [{"index": 1}]}]}))["pages"][0]["keys"][0]
+    )
+
+
+def _key(**fields: object) -> dict[str, object]:
+    return {"pages": [{"id": "root", "keys": [{"index": 0, **fields}]}], "variables": [{"name": "v", "command": "x"}]}
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [
+        (_key(action={"type": "mqtt", "topic": "a/#"}), "wildcards"),
+        (_key(action={"type": "mqtt", "topic": "a/+/b"}), "wildcards"),
+        (_key(action={"type": "mqtt", "topic": "a", "qos": 3}), "qos"),
+        (_key(action={"type": "mqtt", "topic": "a", "retain": "yes"}), "retain"),
+        (_key(action={"type": "mqtt", "topic": "a", "payload": 1}), "payload"),
+        (_key(rules=[{"variable": "nope", "value": "x"}]), "unknown variable"),
+        (_key(rules=[{"variable": "v"}]), "needs a 'variable' and a 'value'"),
+        (_key(rules=[{"variable": "v", "value": "x", "color": "zz"}]), "RRGGBB"),
+        (_key(rules="x"), "rules must be a list"),
+        ({"variables": [{"name": "m", "type": "mqtt", "topic": "#"}]}, "wildcards"),
+    ],
+)
+def test_invalid_mqtt_config(data: object, message: str) -> None:
+    with pytest.raises(ConfigError, match=message):
+        cfgmod.parse(data)
+
+
+def test_rules_may_use_the_builtin_variables() -> None:
+    cfgmod.parse({"pages": [{"id": "root", "keys": [{"index": 0, "rules": [{"variable": "time", "value": "x"}]}]}]})

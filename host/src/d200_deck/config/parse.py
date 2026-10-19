@@ -10,6 +10,7 @@ from typing import Any
 from d200_deck.config.model import (
     ACTION_BACK,
     ACTION_COMMAND,
+    ACTION_MQTT,
     ACTION_PAGE,
     CONFIG_VERSION,
     DEVICE_ACTIONS,
@@ -17,7 +18,9 @@ from d200_deck.config.model import (
     LABEL_SIZE_RANGE,
     ROOT,
     VARIABLE_COMMAND,
+    VARIABLE_MQTT,
     Action,
+    ColorRule,
     DeckConfig,
     KeyConfig,
     Page,
@@ -30,6 +33,7 @@ from d200_deck.errors import ConfigError, InvalidColorError
 PAGE_ID = re.compile(r"[a-z0-9_-]{1,32}")
 VARIABLE_NAME = re.compile(NAME)
 MAX_INTERVAL_S = 3600
+MAX_QOS = 2
 
 
 def _color(value: Any, where: str) -> Color:
@@ -39,6 +43,24 @@ def _color(value: Any, where: str) -> Color:
         return Color.from_hex(value)
     except InvalidColorError as e:
         raise ConfigError(f"{where}: {e}") from e
+
+
+def _topic(value: Any, where: str) -> str:
+    """An MQTT topic to publish to or read from: a string without wildcards (empty: not chosen yet)."""
+    if not isinstance(value, str) or "+" in value or "#" in value:
+        raise ConfigError(f"{where}: topic must be a string without the wildcards + and #")
+    return value
+
+
+def _mqtt_action(value: dict[str, Any], where: str) -> Action:
+    payload, retain, qos = value.get("payload", ""), value.get("retain", False), value.get("qos", 0)
+    if not isinstance(payload, str):
+        raise ConfigError(f"{where}: payload must be a string")
+    if not isinstance(retain, bool):
+        raise ConfigError(f"{where}: retain must be true or false")
+    if not isinstance(qos, int) or isinstance(qos, bool) or not 0 <= qos <= MAX_QOS:
+        raise ConfigError(f"{where}: qos must be 0, 1 or 2")
+    return Action(ACTION_MQTT, topic=_topic(value.get("topic", ""), where), payload=payload, retain=retain, qos=qos)
 
 
 def _action(value: Any, where: str) -> Action | None:
@@ -57,9 +79,25 @@ def _action(value: Any, where: str) -> Action | None:
         if not isinstance(target, str):
             raise ConfigError(f"{where}: page target must be a page id")
         return Action(ACTION_PAGE, target=target)
+    if kind == ACTION_MQTT:
+        return _mqtt_action(value, where)
     if kind in DEVICE_ACTIONS or kind == ACTION_BACK:
         return Action(kind)
     return Action(kind, extra={k: v for k, v in value.items() if k != "type"})
+
+
+def _rules(raw: Any, where: str) -> tuple[ColorRule, ...]:
+    if not isinstance(raw, list):
+        raise ConfigError(f"{where}: rules must be a list")
+    rules = []
+    for i, r in enumerate(raw):
+        at = f"{where} rules[{i}]"
+        if not isinstance(r, dict) or not isinstance(r.get("variable"), str) or not isinstance(r.get("value"), str):
+            raise ConfigError(f"{at}: needs a 'variable' and a 'value' (strings)")
+        color = _color(r["color"], at) if "color" in r else None
+        label_color = _color(r["label_color"], at) if "label_color" in r else None
+        rules.append(ColorRule(r["variable"], r["value"], color, label_color))
+    return tuple(rules)
 
 
 def _key(value: Any, where: str) -> KeyConfig:
@@ -80,7 +118,8 @@ def _key(value: Any, where: str) -> KeyConfig:
     if not isinstance(size, int) or not LABEL_SIZE_RANGE[0] <= size <= LABEL_SIZE_RANGE[1]:
         raise ConfigError(f"{where}: label_size must be {LABEL_SIZE_RANGE[0]}-{LABEL_SIZE_RANGE[1]} (percent)")
     action = _action(value.get("action"), where)
-    return KeyConfig(value["index"], label, color, image, action, label_color, label_pos, size)
+    rules = _rules(value.get("rules", []), where)
+    return KeyConfig(value["index"], label, color, image, action, label_color, label_pos, size, rules)
 
 
 def _keys(raw: Any, where: str) -> tuple[KeyConfig, ...]:
@@ -133,6 +172,15 @@ def _check_pages(pages: tuple[Page, ...]) -> None:
                 raise ConfigError(f"page {p.id!r} key {k.index}: target page {k.action.target!r} does not exist")
 
 
+def _check_rules(pages: tuple[Page, ...], names: set[str]) -> None:
+    known = names | set(BUILTINS)
+    for p in pages:
+        for k in p.keys:
+            for r in k.rules:
+                if r.variable not in known:
+                    raise ConfigError(f"page {p.id!r} key {k.index}: rule uses unknown variable {r.variable!r}")
+
+
 def _variable(value: Any, pos: int) -> Variable:
     where = f"variables[{pos}]"
     if not isinstance(value, dict) or not isinstance(value.get("name"), str):
@@ -145,6 +193,14 @@ def _variable(value: Any, pos: int) -> Variable:
         raise ConfigError(f"{where}: interval must be 1-{MAX_INTERVAL_S} seconds")
     if not isinstance(kind, str) or not kind:
         raise ConfigError(f"{where}: type must be a string")
+    if kind == VARIABLE_MQTT:
+        json_path = value.get("json_path", "")
+        if not isinstance(json_path, str):
+            raise ConfigError(f"{where}: json_path must be a string")
+        extra = {k: v for k, v in value.items() if k not in {"name", "type", "interval", "topic", "json_path"}}
+        return Variable(
+            name, kind, interval=interval, extra=extra, topic=_topic(value.get("topic", ""), where), json_path=json_path
+        )
     if kind != VARIABLE_COMMAND:
         return Variable(
             name,
@@ -190,4 +246,6 @@ def parse(data: Any) -> DeckConfig:
             raise ConfigError("pages must be a list")
         pages = tuple(_page(p, i) for i, p in enumerate(raw))
     _check_pages(pages)
-    return DeckConfig(brightness, background, pages, _variables(data.get("variables", [])))
+    variables = _variables(data.get("variables", []))
+    _check_rules(pages, {v.name for v in variables})
+    return DeckConfig(brightness, background, pages, variables)
