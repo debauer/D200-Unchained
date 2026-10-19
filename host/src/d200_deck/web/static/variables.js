@@ -39,11 +39,12 @@ export class VariablesView {
     const taken = this.variables().map((v) => v.name);
     let n = taken.length + 1;
     while (taken.includes(`var${n}`)) n += 1;
-    const v = { name: `var${n}`, type: "command", command: "", interval: DEFAULT_INTERVAL };
+    const type = this.ctx.types()[0]; // the first type this host can read (an ESP32 has no "command")
+    const v = type === "mqtt" ? { name: `var${n}`, type, topic: "" } : { name: `var${n}`, type: "command", command: "", interval: DEFAULT_INTERVAL };
     this.ctx.setConfig({ ...this.ctx.config(), variables: [...this.variables(), v] });
     this.selected = v.name;
     this.render();
-    $("var-cmd").focus();
+    $(v.type === "mqtt" ? "var-topic" : "var-cmd").focus();
   }
 
   rename(name) {
