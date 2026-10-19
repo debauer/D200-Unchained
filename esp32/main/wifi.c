@@ -54,6 +54,7 @@ esp_err_t wifi_start(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &cfg));
     ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(CONFIG_D200_WIFI_TX_POWER));
     EventBits_t bits = xEventGroupWaitBits(s_events, GOT_IP | FAILED, pdFALSE, pdFALSE, portMAX_DELAY);
     return (bits & GOT_IP) ? ESP_OK : ESP_FAIL;
 }
