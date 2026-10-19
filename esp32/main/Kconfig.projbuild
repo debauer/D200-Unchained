@@ -23,4 +23,8 @@ menu "D200 host"
             Logs every ADB message with its time, dumps the D200's dmesg once the bootstrap ran and turns
             on the ESP-IDF USB host logs (needs "Maximum log verbosity: Debug", see sdkconfig.defaults).
 
+    config D200_SELFTEST
+        bool "Draw test images on key 0 at every connection (timing log)"
+        default n
+
 endmenu

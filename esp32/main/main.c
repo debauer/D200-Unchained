@@ -1,6 +1,7 @@
 #include "esp_littlefs.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "device.h"
 #include "usb_adb.h"
 #include "web.h"
 #include "wifi.h"
@@ -27,6 +28,7 @@ void app_main(void)
     ESP_ERROR_CHECK(err);
     mount("www", "/www", true);
     mount("storage", "/storage", false);
+    device_init();
     usb_adb_start(); /* independent of WiFi */
     if (wifi_start() == ESP_OK) ESP_ERROR_CHECK(web_start());
 }

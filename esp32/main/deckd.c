@@ -15,10 +15,13 @@ static void put_u32(uint8_t *p, uint32_t v) { p[0] = v; p[1] = v >> 8; p[2] = v 
 static uint32_t get_u32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
 
 /* Handles one ADB message of the stream: acknowledgements and incoming data. */
-static esp_err_t pump(deckd_t *d)
+static esp_err_t pump_wait(deckd_t *d, int ms);
+static esp_err_t pump(deckd_t *d) { return pump_wait(d, 0); }
+
+static esp_err_t pump_wait(deckd_t *d, int ms)
 {
     adb_msg_t m;
-    esp_err_t err = adb_recv_msg(d->adb, &m);
+    esp_err_t err = ms ? adb_recv_msg_wait(d->adb, &m, ms) : adb_recv_msg(d->adb, &m);
     if (err != ESP_OK) return err;
     if (m.command == A_OKAY) {
         d->remote = m.arg0;
@@ -70,23 +73,28 @@ static esp_err_t send_frame(deckd_t *d, uint8_t type, const uint8_t *payload, si
     return err;
 }
 
+/* Takes the next complete frame out of the receive buffer; ESP_ERR_NOT_FOUND when there is none yet. */
+static esp_err_t next_frame_buffered(deckd_t *d, uint8_t *type, uint8_t *out, size_t cap, size_t *out_len)
+{
+    if (d->rx_len < FRAME_HEADER) return ESP_ERR_NOT_FOUND;
+    size_t len = get_u32(d->rx + 1);
+    if (len > DECKD_REPLY_MAX - FRAME_HEADER || len > cap) return ESP_ERR_NO_MEM;
+    if (d->rx_len < FRAME_HEADER + len) return ESP_ERR_NOT_FOUND;
+    *type = d->rx[0];
+    memcpy(out, d->rx + FRAME_HEADER, len);
+    *out_len = len;
+    d->rx_len -= FRAME_HEADER + len;
+    memmove(d->rx, d->rx + FRAME_HEADER + len, d->rx_len);
+    return ESP_OK;
+}
+
 /* Waits for the next complete frame in the receive buffer and removes it. */
 static esp_err_t next_frame(deckd_t *d, uint8_t *type, uint8_t *out, size_t cap, size_t *out_len)
 {
     for (;;) {
-        if (d->rx_len >= FRAME_HEADER) {
-            size_t len = get_u32(d->rx + 1);
-            if (len > DECKD_REPLY_MAX - FRAME_HEADER || len > cap) return ESP_ERR_NO_MEM;
-            if (d->rx_len >= FRAME_HEADER + len) {
-                *type = d->rx[0];
-                memcpy(out, d->rx + FRAME_HEADER, len);
-                *out_len = len;
-                d->rx_len -= FRAME_HEADER + len;
-                memmove(d->rx, d->rx + FRAME_HEADER + len, d->rx_len);
-                return ESP_OK;
-            }
-        }
-        esp_err_t err = pump(d);
+        esp_err_t err = next_frame_buffered(d, type, out, cap, out_len);
+        if (err != ESP_ERR_NOT_FOUND) return err;
+        err = pump(d);
         if (err != ESP_OK) return err;
     }
 }
@@ -104,6 +112,17 @@ esp_err_t deckd_request(deckd_t *d, uint8_t type, const void *payload, size_t le
         break;
     }
     return err;
+}
+
+esp_err_t deckd_wait_frame(deckd_t *d, int ms, uint8_t *type, uint8_t *out, size_t cap, size_t *out_len)
+{
+    for (int tried = 0;; tried++) {
+        esp_err_t err = next_frame_buffered(d, type, out, cap, out_len);
+        if (err != ESP_ERR_NOT_FOUND) return err;
+        if (tried) return ESP_ERR_TIMEOUT; /* got a message but no complete frame yet: let the caller call again */
+        err = pump_wait(d, ms);
+        if (err != ESP_OK) return err;
+    }
 }
 
 /* --- self test ------------------------------------------------------------------------------------ */

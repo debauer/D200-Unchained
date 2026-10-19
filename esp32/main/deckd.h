@@ -39,5 +39,8 @@ esp_err_t deckd_open(deckd_t *d, adb_t *a);
 esp_err_t deckd_request(deckd_t *d, uint8_t type, const void *payload, size_t len, uint8_t *reply_type,
                         uint8_t *reply, size_t cap, size_t *reply_len);
 
+/* Next frame (e.g. a KEY_EVENT), waiting at most `ms`: ESP_ERR_TIMEOUT when nothing came. */
+esp_err_t deckd_wait_frame(deckd_t *d, int ms, uint8_t *type, uint8_t *out, size_t cap, size_t *out_len);
+
 /* Hello, ping round trips and full-size key images, timed in the log. */
 esp_err_t deckd_selftest(deckd_t *d, adb_t *a);

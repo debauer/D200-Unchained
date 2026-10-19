@@ -5,8 +5,9 @@ serves the same web interface (`../host/src/d200_deck/web/static/`, flashed unch
 read-only `www` partition) and the same web API (`../docs/web-api.md`).
 
 Current state: WiFi, web server with the shared UI, `/api/info` stub, USB enumeration of the D200
-and the bootstrap: it stops the vendor app, pushes the embedded `deckd` to the D200 if needed
-and starts it. No `deckd` client or key drawing yet.
+the bootstrap (stops the vendor app, pushes the embedded `deckd` to the D200 if needed and starts it) and a
+`deckd` client. The web API serves `/api/info` with the real key windows, `/api/events` (key presses, status), and
+stores the configuration (`/api/config`). Key images, actions and drawing the configured keys are not done yet.
 
 ## Hardware
 
