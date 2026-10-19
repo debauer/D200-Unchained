@@ -83,52 +83,71 @@ static void dump_device_log(adb_t *a)
     free(text);
 }
 
+/* A broken link makes every adb_exec return an empty answer: "not listening", "not installed". Check it after
+ * each step so that the bootstrap stops instead of acting on those answers. */
+#define LINK_LOST(a) ((a)->broken)
+
 esp_err_t bootstrap_deckd(adb_t *a)
 {
     const size_t size = deckd_end - deckd_start;
     char *out = malloc(512);
     if (!out) return ESP_ERR_NO_MEM;
+    esp_err_t err = ESP_FAIL;
     /* Commands that scan /proc (killall, pidof) seem to break the USB link while the vendor app runs, likely
-     * through a load and clock step that dips the 5 V. Pin the CPU to its lowest clock first (the governor is left alone: powersave is not available), with shell
-     * builtins only (no new process). */
-    esp_err_t err = adb_exec(a, "shell:d=/sys/devices/system/cpu/cpu0/cpufreq; read lo < $d/cpuinfo_min_freq; "
-                                "echo $lo > $d/scaling_max_freq; "
-                                "read g < $d/scaling_governor; read f < $d/scaling_cur_freq; echo cpu:$g:$f", out, 512);
+     * through a load and clock step that dips the 5 V. Pin the CPU to its lowest clock first (the governor is
+     * left alone: powersave is not available), with shell builtins only (no new process). */
+    err = adb_exec(a, "shell:d=/sys/devices/system/cpu/cpu0/cpufreq; read lo < $d/cpuinfo_min_freq; "
+                      "echo $lo > $d/scaling_max_freq; "
+                      "read g < $d/scaling_governor; read f < $d/scaling_cur_freq; echo cpu:$g:$f", out, 512);
     if (err == ESP_OK) ESP_LOGI(TAG, "%s", out);
     if (err == ESP_OK) err = stop_vendor(a, out, 512);
-#ifdef CONFIG_D200_DEBUG
-    if (err == ESP_OK) dump_device_log(a);
-#endif
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "cannot stop the vendor app: %s", out);
-    } else if (deckd_listening(a, out, 512)) {
+        goto done;
+    }
+#ifdef CONFIG_D200_DEBUG
+    dump_device_log(a);
+    if (LINK_LOST(a)) goto lost;
+#endif
+    bool up = deckd_listening(a, out, 512);
+    if (LINK_LOST(a)) goto lost;
+    if (up) {
         ESP_LOGI(TAG, "deckd already listens on port %d", DECKD_PORT);
-    } else {
-        if (installed_size(a, out, 512) != (long)size) {
-            ESP_LOGI(TAG, "installing deckd (%u bytes)", (unsigned)size);
-            adb_exec(a, "shell:killall deckd 2>/dev/null; mkdir -p /userdata/d200", out, 512);
-            err = adb_push(a, deckd_start, size, DEVICE_BINARY, 0100755);
-            if (err != ESP_OK) ESP_LOGE(TAG, "push failed");
-        }
-        if (err == ESP_OK) {
-            ESP_LOGI(TAG, "starting deckd");
-            err = adb_exec(a, "shell:setsid " DEVICE_BINARY " </dev/null >" DEVICE_LOG " 2>&1 & sleep 1", out, 512);
-        }
-        err = ESP_FAIL;
-        for (int i = 0; i < START_CHECKS; i++) {
-            if (deckd_listening(a, out, 512)) {
-                err = ESP_OK;
-                break;
-            }
-            vTaskDelay(pdMS_TO_TICKS(1000));
-        }
-        if (err == ESP_OK) {
-            ESP_LOGI(TAG, "deckd is listening on the device");
-        } else {
-            adb_exec(a, "shell:echo pid: $(pidof deckd); cat " DEVICE_LOG, out, 512);
-            ESP_LOGE(TAG, "deckd did not start: %s", out);
+        err = ESP_OK;
+        goto done;
+    }
+    long installed = installed_size(a, out, 512);
+    if (LINK_LOST(a)) goto lost;
+    if (installed != (long)size) {
+        ESP_LOGI(TAG, "installing deckd (%u bytes)", (unsigned)size);
+        adb_exec(a, "shell:killall deckd 2>/dev/null; mkdir -p /userdata/d200", out, 512);
+        if (LINK_LOST(a)) goto lost;
+        err = adb_push(a, deckd_start, size, DEVICE_BINARY, 0100755);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "push failed");
+            goto done;
         }
     }
+    ESP_LOGI(TAG, "starting deckd");
+    adb_exec(a, "shell:setsid " DEVICE_BINARY " </dev/null >" DEVICE_LOG " 2>&1 & sleep 1", out, 512);
+    if (LINK_LOST(a)) goto lost;
+    for (int i = 0; i < START_CHECKS; i++) {
+        if (deckd_listening(a, out, 512)) {
+            ESP_LOGI(TAG, "deckd is listening on the device");
+            err = ESP_OK;
+            goto done;
+        }
+        if (LINK_LOST(a)) goto lost;
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    adb_exec(a, "shell:echo pid: $(pidof deckd); cat " DEVICE_LOG, out, 512);
+    ESP_LOGE(TAG, "deckd did not start: %s", out);
+    err = ESP_FAIL;
+    goto done;
+lost:
+    ESP_LOGW(TAG, "USB link lost during the bootstrap");
+    err = ESP_FAIL;
+done:
     free(out);
     return err;
 }

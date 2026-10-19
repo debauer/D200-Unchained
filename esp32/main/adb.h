@@ -21,6 +21,7 @@ typedef struct {
     uint8_t reply[8];           /* last sync reply ("OKAY"/"FAIL" + number) */
     uint32_t reply_len;         /* its length field, valid once `got_reply` */
     int got_reply;
+    bool broken;               /* a transfer failed since the last adb_connect */
 } adb_t;
 
 typedef struct {

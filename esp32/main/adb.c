@@ -47,6 +47,7 @@ static esp_err_t bulk(adb_t *a, uint8_t ep, void *data, size_t len, size_t *actu
     }
     vSemaphoreDelete(done);
     usb_host_transfer_free(x);
+    if (err != ESP_OK) a->broken = true;
     return err;
 }
 
@@ -126,6 +127,7 @@ esp_err_t adb_connect(adb_t *a)
 {
     static const char banner[] = "host::";
     a->rx_pos = a->rx_len = 0;
+    a->broken = false;
     esp_err_t err = adb_send_msg(a, A_CNXN, ADB_VERSION, ADB_MAX_DATA, banner, sizeof banner);
     adb_msg_t m;
     while (err == ESP_OK) {
