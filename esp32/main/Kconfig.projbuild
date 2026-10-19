@@ -1,13 +1,5 @@
 menu "D200 host"
 
-    config D200_WIFI_SSID
-        string "WiFi SSID"
-        default ""
-
-    config D200_WIFI_PASSWORD
-        string "WiFi password"
-        default ""
-
     config D200_WIFI_TX_POWER
         int "WiFi TX power (units of 0.25 dBm, 8..84)"
         range 8 84

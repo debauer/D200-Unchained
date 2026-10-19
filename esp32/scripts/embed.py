@@ -5,6 +5,8 @@
   font_bold / font_medium
               Chakra Petch 700 / 500 as TrueType, converted from the woff2 files of the web interface
               (host/src/d200_deck/web/static/fonts), so both hosts draw with the same font
+
+and main/wifi_local.h holds the WiFi login from `wifi.local` (not checked in, see wifi.local.example).
 """
 
 import os
@@ -72,3 +74,24 @@ target = project / "main/blobs.S"
 if not target.exists() or target.read_text() != blobs:
     target.write_text(blobs)
 print(f"embedding deckd from {deckd} and Chakra Petch from {fonts_dir}")
+
+
+def wifi_header():
+    """The WiFi login as C strings, from the untracked `wifi.local` (lines `ssid=...` and `password=...`)."""
+    values = {"ssid": "", "password": ""}
+    path = project / "wifi.local"
+    if path.exists():
+        for line in path.read_text().splitlines():
+            key, sep, value = line.partition("=")
+            if sep and key.strip() in values:
+                values[key.strip()] = value.strip()
+    else:
+        print("no wifi.local: WiFi stays off (copy wifi.local.example)")
+    quote = lambda text: '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return f"#define WIFI_SSID {quote(values['ssid'])}\n#define WIFI_PASSWORD {quote(values['password'])}\n"
+
+
+header = project / "main/wifi_local.h"
+text = wifi_header()
+if not header.exists() or header.read_text() != text:
+    header.write_text(text)

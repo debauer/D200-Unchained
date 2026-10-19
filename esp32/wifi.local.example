@@ -1,0 +1,3 @@
+# Copy to wifi.local (not checked in) and fill in; the next build puts it into the firmware.
+ssid=my-network
+password=my-password

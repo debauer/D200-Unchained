@@ -7,6 +7,7 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "wifi_local.h"
 
 static const char *TAG = "wifi";
 static EventGroupHandle_t s_events;
@@ -36,8 +37,8 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 
 esp_err_t wifi_start(void)
 {
-    if (strlen(CONFIG_D200_WIFI_SSID) == 0) {
-        ESP_LOGE(TAG, "no SSID: set it with `idf.py menuconfig` (D200 host)");
+    if (strlen(WIFI_SSID) == 0) {
+        ESP_LOGE(TAG, "no SSID: put it into esp32/wifi.local (see wifi.local.example) and rebuild");
         return ESP_ERR_INVALID_STATE;
     }
     s_events = xEventGroupCreate();
@@ -49,8 +50,8 @@ esp_err_t wifi_start(void)
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, on_event, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, NULL));
     wifi_config_t cfg = {0};
-    strlcpy((char *)cfg.sta.ssid, CONFIG_D200_WIFI_SSID, sizeof cfg.sta.ssid);
-    strlcpy((char *)cfg.sta.password, CONFIG_D200_WIFI_PASSWORD, sizeof cfg.sta.password);
+    strlcpy((char *)cfg.sta.ssid, WIFI_SSID, sizeof cfg.sta.ssid);
+    strlcpy((char *)cfg.sta.password, WIFI_PASSWORD, sizeof cfg.sta.password);
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &cfg));
     ESP_ERROR_CHECK(esp_wifi_start());

@@ -27,8 +27,10 @@ powered; check them against the schematic of your board revision. The flash layo
 - **PSRAM** (ESP32-S3 with octal PSRAM, e.g. N8R8/N16R8): the renderer needs a few hundred KB for the wide
   info window. `sdkconfig.defaults` turns it on; a board without it will not start.
 - The time zone for the clock is a menu item (`D200 host`), default Central Europe.
-- `sdkconfig.defaults` only applies to a fresh `sdkconfig.esp32s3`: after it changes, delete that file (and enter
-  the WiFi data again in `menuconfig`) or change the setting there.
+- `sdkconfig.defaults` only applies to a fresh `sdkconfig.esp32s3`: after it changes, delete that file or change the
+  setting in `menuconfig`.
+- The WiFi login is not in the configuration: copy `wifi.local.example` to `wifi.local` (ignored by git) and fill in
+  `ssid` and `password`; the next build embeds it. Without the file the WiFi stays off.
 
 ## Build and flash
 
@@ -41,7 +43,7 @@ armv7-unknown-linux-musleabihf` in `../device`); `scripts/deckd.py` looks for it
 ```sh
 cd esp32
 uv sync
-uv run pio run -t menuconfig      # "D200 host": WiFi SSID and password
+cp wifi.local.example wifi.local  # then enter the WiFi login
 uv run pio run -t upload          # firmware
 uv run pio run -t uploadfs        # web UI (../host/src/d200_deck/web/static) into the `www` partition
 uv run pio device monitor         # log, on the COM port
