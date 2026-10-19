@@ -4,8 +4,7 @@ import struct
 
 import pytest
 
-from d200_deck.constants import PROTOCOL_VERSION
-from d200_deck.constants import MAX_PAYLOAD
+from d200_deck.constants import MAX_PAYLOAD, PROTOCOL_VERSION
 from d200_deck.device.protocol import (
     Color,
     Msg,
