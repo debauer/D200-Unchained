@@ -36,6 +36,7 @@ void app_main(void)
     mount("www", "/www", true);
     mount("storage", "/storage", false);
     keyfiles_init();
+    mqtt_init();
     device_init();
     usb_adb_start(); /* independent of WiFi */
     if (wifi_start() == ESP_OK) {

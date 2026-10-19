@@ -11,6 +11,9 @@
 
 #define MQTT_VALUE_SIZE (MQTT_VALUE_MAX + 1)
 
+/* Creates the lock; call before anything draws (the device task asks for values as soon as the D200 is up). */
+void mqtt_init(void);
+
 /* Reads the broker settings and connects when a host is set. Call once, after the storage is mounted and WiFi runs. */
 void mqtt_start(void);
 

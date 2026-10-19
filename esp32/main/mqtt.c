@@ -179,9 +179,13 @@ static void connect(void)
     if (esp_mqtt_client_start(s_client) != ESP_OK) snprintf(s_error, sizeof s_error, "cannot start the client");
 }
 
+void mqtt_init(void)
+{
+    s_lock = xSemaphoreCreateMutex();
+}
+
 void mqtt_start(void)
 {
-    if (!s_lock) s_lock = xSemaphoreCreateMutex();
     mqtt_settings_load(&s_settings);
     connect();
 }
