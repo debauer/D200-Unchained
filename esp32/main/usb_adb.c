@@ -102,12 +102,15 @@ static void adb_task(void *arg)
     a->client = s_client;
     for (;;) {
         xSemaphoreTake(s_new_dev, portMAX_DELAY);
-        /* A failed try (e.g. the link dies when the vendor app is stopped) starts over with a fresh open. */
+        /* A failed try (the link can die when the display changes): reset the bus and open again. */
         for (int attempt = 1; s_attached && attempt <= SESSION_ATTEMPTS; attempt++) {
             if (session(a, s_new_address) == ESP_OK) break;
-            ESP_LOGW(TAG, "attempt %d failed, opening the device again", attempt);
+            ESP_LOGW(TAG, "attempt %d failed, resetting the USB port", attempt);
             s_present = false;
-            vTaskDelay(pdMS_TO_TICKS(2000));
+            usb_host_lib_set_root_port_power(false);
+            vTaskDelay(pdMS_TO_TICKS(500));
+            usb_host_lib_set_root_port_power(true);
+            if (xSemaphoreTake(s_new_dev, pdMS_TO_TICKS(8000)) != pdTRUE) ESP_LOGW(TAG, "no device after the reset");
         }
     }
 }
