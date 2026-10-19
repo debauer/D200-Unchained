@@ -57,15 +57,17 @@ class DynamicKeys:
             color = (rule.color if rule else None) or key.color
             text_color = (rule.label_color if rule else None) or key.label_color
             icon = self._icon(page, window)
+            alt = self._icon(page, window, alt=True) if rule is not None else None
             if shows_clock(key, window):
                 out[window.index] = self._clock(cfg, window, page, now, color)
-            # A matching rule recolours the key; a picture without a stored icon cannot be recoloured.
-            elif names(key.label) or (rule is not None and (icon is not None or not key.image)):
+            # A matching rule recolours the key or swaps in its second icon; a picture without a stored icon
+            # cannot be recoloured.
+            elif names(key.label) or (rule is not None and (alt is not None or icon is not None or not key.image)):
                 out[window.index] = render_key(
                     window.width,
                     window.height,
                     color=color,
-                    icon=icon,
+                    icon=alt if alt is not None else icon,
                     text=fill(key.label, filled, known),
                     text_color=text_color,
                     position=key.label_pos,
@@ -81,8 +83,8 @@ class DynamicKeys:
             window.width, window.height, color, now, time_color=time_color, date_color=p.accent_color or MAGENTA
         )
 
-    def _icon(self, page: str, window: KeyInfo) -> bytes | None:
-        path: Path = self.store.icon_path(page, window.index)
+    def _icon(self, page: str, window: KeyInfo, alt: bool = False) -> bytes | None:
+        path: Path = (self.store.alt_icon_path if alt else self.store.icon_path)(page, window.index)
         try:
             data = path.read_bytes()
         except FileNotFoundError:

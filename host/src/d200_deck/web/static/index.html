@@ -207,7 +207,22 @@
         <span class="label">Colour rules</span>
         <div class="rules" id="rules"></div>
         <button type="button" class="btn dashed small" id="add-rule">+ Rule</button>
-        <span class="muted small-print">While a variable has exactly this value, the key shows these colours (first match wins). Needs a variable, e.g. an MQTT one.</span>
+        <span class="muted small-print">While a variable has exactly this value, the key shows these colours and, if you set one, a second image (first match wins). Needs a variable, e.g. an MQTT one.</span>
+      </div>
+
+      <div class="field" id="alt-box" hidden>
+        <span class="label">Image while a rule matches</span>
+        <div class="drop">
+          <canvas class="thumb" id="alt-thumb" width="196" height="196"></canvas>
+          <div class="drop-body">
+            <div class="row">
+              <label for="alt-file" class="btn outline small">Choose file</label>
+              <button type="button" class="btn ghost small danger-hover" id="clear-alt" hidden>Remove</button>
+            </div>
+            <span class="muted ellipsis" id="alt-info">Keeps the image above</span>
+          </div>
+          <input id="alt-file" type="file" accept="image/*" hidden>
+        </div>
       </div>
 
       <button type="button" class="reset" id="reset">&times; Reset key</button>

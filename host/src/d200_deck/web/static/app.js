@@ -1,6 +1,7 @@
 // D200 // Configurator: state, pages, autosave, edit/test modes, live events.
 
 import { api } from "./api.js";
+import { AltMedia } from "./altmedia.js";
 import { Autosave } from "./autosave.js";
 import { fontsReady, iconFromFile, rawToCanvas } from "./compose.js";
 import { DeckView, badgeOf } from "./deck.js";
@@ -41,6 +42,8 @@ function solid(w, color) {
   return c;
 }
 
+const altMedia = new AltMedia(changed, fail);
+
 const ownColors = (e) => ({ color: Boolean(e.color), label_color: Boolean(e.label_color) });
 
 function showEditor() {
@@ -49,6 +52,8 @@ function showEditor() {
   const s = slot(page, i);
   const current = pageOf(state.config, page);
   const parent = current.parent ? pageOf(state.config, current.parent) : null;
+  const k = lookOf(page, i);
+  altMedia.show({ rules: k.rules || [], alt: s.alt, name: s.altName, w: w.width, h: w.height });
   editor.show({
     variables: (state.config.variables || []).map((v) => v.name),
     key: lookOf(page, i), own: ownColors(entryOf(page, i)), window: w, actions: state.info.actions,
@@ -121,7 +126,7 @@ const editor = new Editor({
   reset() {
     const { page, selected: i } = state;
     setEntry(page, i, { index: i, ...BLANK });
-    Object.assign(slot(page, i), { icon: null, iconDirty: true, mediaName: "" });
+    Object.assign(slot(page, i), { icon: null, iconDirty: true, mediaName: "", alt: null, altDirty: true, altName: "" });
     changed(page, i).catch(fail);
   },
   newTarget() {

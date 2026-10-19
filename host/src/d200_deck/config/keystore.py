@@ -1,7 +1,7 @@
 """Key image files: names per page, atomic writes, clean-up of deleted pages.
 
 The root page keeps the names used before pages existed (`key-<n>.rgb565`,
-`key-<n>-icon.rgb565`) so existing images and icons stay valid; other pages use
+`key-<n>-icon.rgb565`, `key-<n>-alt.rgb565`) so existing images and icons stay valid; other pages use
 `<page>-key-<n>...`."""
 
 from __future__ import annotations
@@ -30,6 +30,10 @@ class KeyStore:
     def icon_path(self, page: str, index: int) -> Path:
         """Unlabelled icon kept for the web UI (never shown directly)."""
         return self.dir / f"{_prefix(page)}key-{index}-icon.rgb565"
+
+    def alt_icon_path(self, page: str, index: int) -> Path:
+        """Unlabelled icon shown instead of the icon while a colour rule matches."""
+        return self.dir / f"{_prefix(page)}key-{index}-alt.rgb565"
 
     def path(self, name: str) -> Path:
         return self.dir / name

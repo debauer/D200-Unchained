@@ -51,11 +51,12 @@ export function compose(page, i, { rules = false } = {}) {
   const rule = rules ? ruleFor(base, state.values) : null;
   const e = rule ? { ...base, color: rule.color || base.color, label_color: rule.label_color || base.label_color } : base;
   const s = slot(page, i);
+  const icon = rule && s.alt ? s.alt : s.icon; // a rule can bring a second image
   const w = windowOf(i);
   const label = (e.label || "").trim();
   const now = builtinValues(new Date());
-  s.dynamic = isDynamic(label) || (isInfoWindow(w) && !s.icon && !label);
-  if (!s.icon && !label) {
+  s.dynamic = isDynamic(label) || (isInfoWindow(w) && !icon && !label);
+  if (!icon && !label) {
     if (!s.dynamic && !rule) return null;
     if (!s.dynamic) return composeKey({ w: w.width, h: w.height, color: toCssColor(e.color), label: "", labelColor: toCssColor(e.label_color), labelPos: "bottom", labelSize: 100 });
     const c = clockColors(state.config, page, i);
@@ -64,7 +65,7 @@ export function compose(page, i, { rules = false } = {}) {
   }
   const known = new Set([...BUILTINS, ...(state.config.variables || []).map((v) => v.name)]);
   return composeKey({
-    w: w.width, h: w.height, color: toCssColor(e.color), icon: s.icon,
+    w: w.width, h: w.height, color: toCssColor(e.color), icon,
     label: s.dynamic ? fill(e.label, { ...state.values, ...now }, known) : e.label,
     labelColor: toCssColor(e.label_color), labelPos: e.label_pos || "bottom", labelSize: e.label_size || 100,
   });
@@ -77,7 +78,10 @@ export function ensureIcon(page, i) {
   s.iconLoad ??= api.icon(page, i).then((icon) => {
     if (s.icon === undefined) s.icon = icon;
   });
-  return s.iconLoad;
+  s.altLoad ??= api.altIcon(page, i).then((alt) => {
+    if (s.alt === undefined) s.alt = alt;
+  });
+  return Promise.all([s.iconLoad, s.altLoad]);
 }
 
 // Fetch the device images of a page's keys once.

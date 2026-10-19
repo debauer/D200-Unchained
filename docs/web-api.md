@@ -43,6 +43,9 @@ The API can configure actions that the host executes. Therefore:
 | PUT | `/api/keys/<index>/icon` | Store an icon (body: RGB565, exactly the window size); it is not displayed |
 | DELETE | `/api/keys/<index>/icon` | Remove the icon |
 | POST | `/api/keys/<index>/press` | Test the key's action (UI test mode): `command` actions are only reported, never started (`(test, not run) $ ...`); device and page actions run; `{"started": bool}`, `503` if the device is unreachable for a device action |
+| GET | `/api/keys/<index>/alticon` | Raw RGB565 of the second icon (shown while a colour rule matches), `404` if none |
+| PUT | `/api/keys/<index>/alticon` | Store the second icon (body: RGB565, exactly the window size) |
+| DELETE | `/api/keys/<index>/alticon` | Remove the second icon |
 | GET | `/api/mqtt` | MQTT broker settings and state (never the password) |
 | PUT | `/api/mqtt` | Set the broker settings; a missing `password` keeps the stored one, `null` clears it |
 | GET | `/api/events` | Server-sent events with key presses |

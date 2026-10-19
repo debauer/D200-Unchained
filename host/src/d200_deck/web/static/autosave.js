@@ -91,6 +91,11 @@ export class Autosave {
       else await api.deleteIcon(page, i);
       s.iconDirty = false;
     }
+    if (s.altDirty) {
+      if (s.alt) await api.putAltIcon(page, i, s.alt);
+      else await api.deleteAltIcon(page, i);
+      s.altDirty = false;
+    }
     if (s.image && !s.dynamic) {
       const stored = await api.putImage(page, i, s.image);
       setEntry(page, i, { ...entryOf(page, i), image: stored.image });

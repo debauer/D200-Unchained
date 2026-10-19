@@ -124,6 +124,16 @@ def test_icon_lifecycle(web: Web) -> None:
     assert web.json("DELETE", "/api/keys/0/icon") == (200, {"stored": False})
 
 
+def test_alt_icon_lifecycle(web: Web) -> None:
+    assert web.request("GET", "/api/keys/0/alticon")[0] == 404
+    assert web.json("PUT", "/api/keys/0/alticon", raw=b"\x00" * KEY0) == (200, {"stored": True})
+    assert web.request("GET", "/api/keys/0/alticon")[0] == 200
+    assert web.request("GET", "/api/keys/0/icon")[0] == 404  # separate from the icon
+    assert web.json("PUT", "/api/keys/0/alticon", raw=b"\x00")[0] == 400
+    assert web.json("DELETE", "/api/keys/0/alticon") == (200, {"stored": False})
+    assert web.request("GET", "/api/keys/0/alticon")[0] == 404
+
+
 def test_unknown_key(web: Web) -> None:
     assert web.json("PUT", "/api/keys/99/image", raw=b"")[0] == 404
     assert web.json("POST", "/api/keys/99/press")[0] == 404

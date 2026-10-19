@@ -60,7 +60,10 @@ have a plain colour.
   {"variable": "light", "value": "OFF", "color": "202040"}]}
 ```
 
-A key with a picture needs a stored icon to be recoloured. Pictures added in the web UI have one.
+A key with rules can also have a **second image** (under the rules in the key editor): while a rule
+matches, it replaces the key's image, with the rule's colours behind it and the text on top. Without a
+second image, a picture keeps its look and only the colours of keys without a picture change. The second
+image is stored like the icon (`key-<n>-alt.rgb565`, API: `.../keys/<n>/alticon`).
 
 ## Example: toggle a light and show its state
 

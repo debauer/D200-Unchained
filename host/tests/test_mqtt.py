@@ -22,7 +22,7 @@ from d200_deck.config import (
     save_settings,
 )
 from d200_deck.config.keystore import KeyStore
-from d200_deck.device.protocol import Color, Msg, parse_info
+from d200_deck.device.protocol import Color, Msg, parse_info, rgb888_to_rgb565
 from d200_deck.errors import ConfigError
 from d200_deck.render.dynamic import DynamicKeys, matched_rule
 from d200_deck.service.host import HostService, ServiceSettings
@@ -183,6 +183,20 @@ def test_rules_recolour_keys_and_pull_in_their_variables(tmp_path: Path) -> None
     on = dyn.pixels(cfg, info, "root", {"light": "ON"}, now)[0]
     off = dyn.pixels(cfg, info, "root", {"light": "OFF"}, now)[0]
     assert on != off and len(on) == len(off) == 196 * 196 * 2
+
+
+def test_a_matching_rule_shows_the_second_icon(tmp_path: Path) -> None:
+    rule_on = ColorRule("light", "ON", None)
+    key = KeyConfig(0, image="key-0.rgb565", rules=(rule_on,))  # a picture; the colour rule alone cannot recolour it
+    cfg = DeckConfig(pages=(Page("root", keys=(key,)),), variables=(LIGHT,))
+    store = KeyStore(tmp_path)
+    dyn = DynamicKeys(store)
+    info, now = parse_info(INFO_PAYLOAD), datetime(2026, 10, 19, 12, 0)
+    assert 0 not in dyn.pixels(cfg, info, "root", {"light": "ON"}, now)  # no second icon: the stored image stays
+    alt = rgb888_to_rgb565(bytes([255, 0, 0]) * (196 * 196))
+    store.write(store.alt_icon_path("root", 0), alt)
+    assert dyn.pixels(cfg, info, "root", {"light": "ON"}, now)[0] == alt
+    assert 0 not in dyn.pixels(cfg, info, "root", {"light": "OFF"}, now)  # rule off: back to the stored image
 
 
 def test_key_press_publishes_and_incoming_message_redraws(tmp_path: Path, fake_deck: Callable[..., FakeDeck]) -> None:

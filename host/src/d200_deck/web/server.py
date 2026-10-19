@@ -44,7 +44,7 @@ CONTENT_TYPES = {
     ".txt": "text/plain; charset=utf-8",
 }
 # /api/keys/<n>/... is the root page, /api/pages/<page>/keys/<n>/... any page.
-KEY_PATH = re.compile(r"^/api/(?:pages/([a-z0-9_-]{1,32})/)?keys/(\d+)/(image|icon|press)$")
+KEY_PATH = re.compile(r"^/api/(?:pages/([a-z0-9_-]{1,32})/)?keys/(\d+)/(image|icon|alticon|press)$")
 
 
 def web_root() -> Path:
@@ -159,9 +159,12 @@ class DeckHandler(BaseHTTPRequestHandler):
         self._json(HTTPStatus.OK, {"page": page})
 
     def _key(self, method: str, page: str, index: int, what: str) -> None:
-        handlers = {"press": self._key_press, "image": self._key_image, "icon": self._key_icon}
+        handlers = {"press": self._key_press, "image": self._key_image}
         try:
-            handlers[what](method, page, index)
+            if what in ("icon", "alticon"):
+                self._key_icon(method, page, index, alt=what == "alticon")
+            else:
+                handlers[what](method, page, index)
         except (UnknownKeyError, UnknownPageError) as e:
             raise ApiError(HTTPStatus.NOT_FOUND, str(e)) from e
         except ImageSizeError as e:
@@ -188,16 +191,16 @@ class DeckHandler(BaseHTTPRequestHandler):
             raise ApiError(HTTPStatus.METHOD_NOT_ALLOWED, f"{method} not allowed on image")
         self._json(HTTPStatus.OK, cfgmod.key_to_json(key))
 
-    def _key_icon(self, method: str, page: str, index: int) -> None:
+    def _key_icon(self, method: str, page: str, index: int, alt: bool) -> None:
         service = self.server.service
         if method == "GET":
             service.window(index)
-            self._raw_file(service.icon_path(index, page), f"key {index} has no icon")
+            self._raw_file(service.icon_path(index, page, alt), f"key {index} has no icon")
         elif method == "PUT":
-            service.store_icon(index, self._body(), page)
+            service.store_icon(index, self._body(), page, alt)
             self._json(HTTPStatus.OK, {"stored": True})
         elif method == "DELETE":
-            service.delete_icon(index, page)
+            service.delete_icon(index, page, alt)
             self._json(HTTPStatus.OK, {"stored": False})
         else:
             raise ApiError(HTTPStatus.METHOD_NOT_ALLOWED, f"{method} not allowed on icon")

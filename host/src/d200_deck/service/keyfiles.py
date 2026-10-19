@@ -39,18 +39,18 @@ class KeyFiles:
         if len(pixels) != expected:
             raise ImageSizeError(f"key {index} needs {expected} bytes ({w.width}x{w.height} RGB565), got {len(pixels)}")
 
-    def icon_path(self, index: int, page: str = ROOT) -> Path:
-        """Unlabelled icon kept for the web UI (never shown directly)."""
+    def icon_path(self, index: int, page: str = ROOT, alt: bool = False) -> Path:
+        """Unlabelled icon kept for the web UI; `alt`: the one shown while a colour rule matches."""
         self.config.page(page)
-        return self.store.icon_path(page, index)
+        return self.store.alt_icon_path(page, index) if alt else self.store.icon_path(page, index)
 
-    def store_icon(self, index: int, pixels: bytes, page: str = ROOT) -> None:
+    def store_icon(self, index: int, pixels: bytes, page: str = ROOT, alt: bool = False) -> None:
         self._check_size(index, pixels)
-        self.store.write(self.icon_path(index, page), pixels)
+        self.store.write(self.icon_path(index, page, alt), pixels)
 
-    def delete_icon(self, index: int, page: str = ROOT) -> None:
+    def delete_icon(self, index: int, page: str = ROOT, alt: bool = False) -> None:
         self.window(index)
-        self.icon_path(index, page).unlink(missing_ok=True)
+        self.icon_path(index, page, alt).unlink(missing_ok=True)
 
     def store_image(self, index: int, pixels: bytes, page: str = ROOT) -> KeyConfig:
         """Store raw RGB565 for key `index` of `page` and show it; returns the new key entry."""
