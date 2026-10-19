@@ -103,9 +103,13 @@ esp_err_t events_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-void events_start(void)
+void events_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
+}
+
+void events_start(void)
+{
     static esp_timer_handle_t timer;
     const esp_timer_create_args_t args = {.callback = keepalive, .name = "sse_keepalive"};
     ESP_ERROR_CHECK(esp_timer_create(&args, &timer));

@@ -4,6 +4,7 @@
 #include "cJSON.h"
 #include "config.h"
 #include "device.h"
+#include "events.h"
 #include "keyfiles.h"
 #include "logbuf.h"
 #include "mqtt.h"
@@ -36,6 +37,7 @@ void app_main(void)
     mount("www", "/www", true);
     mount("storage", "/storage", false);
     keyfiles_init();
+    events_init();
     mqtt_init();
     device_init();
     usb_adb_start(); /* independent of WiFi */
