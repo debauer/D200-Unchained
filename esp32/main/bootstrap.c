@@ -151,7 +151,9 @@ esp_err_t bootstrap_deckd(adb_t *a)
 #endif
     bool up = deckd_listening(a, out, 512);
     if (LINK_LOST(a)) goto lost;
-    if (up) {
+    long installed = installed_size(a, out, 512);
+    if (LINK_LOST(a)) goto lost;
+    if (up && installed == (long)size) { /* a running deckd of another build is replaced below */
         ESP_LOGI(TAG, "deckd already listens on port %d", DECKD_PORT);
         wake_framebuffer(a, out, 512);
         err = LINK_LOST(a) ? ESP_FAIL : ESP_OK;
@@ -160,8 +162,6 @@ esp_err_t bootstrap_deckd(adb_t *a)
 #endif
         goto done;
     }
-    long installed = installed_size(a, out, 512);
-    if (LINK_LOST(a)) goto lost;
     if (installed != (long)size) {
         ESP_LOGI(TAG, "installing deckd (%u bytes)", (unsigned)size);
         adb_exec(a, "shell:killall deckd 2>/dev/null; mkdir -p /userdata/d200", out, 512);
