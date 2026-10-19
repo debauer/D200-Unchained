@@ -17,9 +17,8 @@ static const char *TAG = "adb";
 #define ADB_CLASS 0xFF
 #define ADB_SUBCLASS 0x42
 #define ADB_PROTOCOL 0x01
-#define SESSION_ATTEMPTS 8
-#define SETTLE_MS 1500
-#define REAPPEAR_MS 5000
+#define SETTLE_MS 500
+#define REAPPEAR_MS 1500
 
 static volatile bool s_present;  /* ADB interface claimed */
 static volatile bool s_attached; /* a device is on the bus */
@@ -111,7 +110,7 @@ static void adb_task(void *arg)
         /* The vendor app seems to reconfigure the USB gadget shortly after a host appears, which kills the
          * link. Wait until the bus has been quiet for a while; after a failure wait for the device to come
          * back by itself, and reset the port only if it does not. */
-        for (int attempt = 1; attempt <= SESSION_ATTEMPTS; attempt++) {
+        for (int attempt = 1; s_attached; attempt++) { /* until it works or the device is gone */
             while (xSemaphoreTake(s_new_dev, pdMS_TO_TICKS(SETTLE_MS)) == pdTRUE) {
             }
             if (!s_attached) break; /* gone again: wait for the next one */
