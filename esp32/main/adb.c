@@ -37,7 +37,8 @@ static esp_err_t bulk(adb_t *a, uint8_t ep, void *data, size_t len, size_t *actu
     if (err == ESP_OK) {
         xSemaphoreTake(done, portMAX_DELAY);
         if (x->status != USB_TRANSFER_STATUS_COMPLETED) {
-            ESP_LOGW(TAG, "transfer on ep 0x%02x: status %d", ep, x->status);
+            ESP_LOGW(TAG, "transfer on ep 0x%02x: status %d (%u of %u bytes)", ep, x->status,
+                     (unsigned)x->actual_num_bytes, (unsigned)len);
             err = ESP_FAIL;
         } else if (ep & 0x80) {
             memcpy(data, x->data_buffer, x->actual_num_bytes);
@@ -89,6 +90,13 @@ esp_err_t adb_recv_msg(adb_t *a, adb_msg_t *m)
         return ESP_ERR_INVALID_RESPONSE;
     }
     return m->length ? rx_read(a, a->buf, m->length) : ESP_OK;
+}
+
+void adb_recover(adb_t *a)
+{
+    usb_host_endpoint_clear(a->dev, a->in_ep);
+    usb_host_endpoint_clear(a->dev, a->out_ep);
+    a->rx_pos = a->rx_len = 0;
 }
 
 esp_err_t adb_connect(adb_t *a)

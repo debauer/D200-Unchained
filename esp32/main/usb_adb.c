@@ -16,6 +16,7 @@ static const char *TAG = "adb";
 #define ADB_CLASS 0xFF
 #define ADB_SUBCLASS 0x42
 #define ADB_PROTOCOL 0x01
+#define BOOTSTRAP_ATTEMPTS 4
 
 static volatile bool s_present;
 static volatile uint8_t s_new_address;
@@ -54,7 +55,13 @@ static void session(adb_t *a, uint8_t address)
     if (find_adb(a, cfg) && usb_host_interface_claim(a->client, a->dev, a->iface, 0) == ESP_OK) {
         s_present = true;
         ESP_LOGI(TAG, "ADB interface %u, endpoints in 0x%02x out 0x%02x", a->iface, a->in_ep, a->out_ep);
-        if (adb_connect(a) == ESP_OK) bootstrap_deckd(a);
+        /* Stopping the vendor app can disturb the USB link for a moment: start over until it holds. */
+        for (int attempt = 1; s_present && attempt <= BOOTSTRAP_ATTEMPTS; attempt++) {
+            if (adb_connect(a) == ESP_OK && bootstrap_deckd(a) == ESP_OK) break;
+            ESP_LOGW(TAG, "bootstrap attempt %d failed, reconnecting", attempt);
+            adb_recover(a);
+            vTaskDelay(pdMS_TO_TICKS(1500));
+        }
         while (s_present) vTaskDelay(pdMS_TO_TICKS(500)); /* the deckd client will live here */
         usb_host_interface_release(a->client, a->dev, a->iface);
     } else {
