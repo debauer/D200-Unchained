@@ -75,9 +75,9 @@ def test_info(web: Web) -> None:
     status, info = web.json("GET", "/api/info")
     assert status == 200
     assert info["connected"] is True
-    assert info["actions"] == ["command", "bl_down", "bl_up", "disp_off", "disp_on", "page", "back"]
+    assert info["actions"] == ["command", "mqtt", "bl_down", "bl_up", "disp_off", "disp_on", "page", "back"]
     assert info["brightness"] == {"level": 255, "percent": 100, "display_on": True}
-    assert info["variable_types"] == ["command"]
+    assert info["variable_types"] == ["command", "mqtt"]
     assert {"time", "date"} <= set(info["values"])
     assert info["screen"] == {"width": 1280, "height": 720}
     assert info["keys"][1] == {"index": 1, "code": 30, "x": 791, "y": 521, "width": 456, "height": 196}
@@ -157,6 +157,9 @@ def test_events_stream(web: Web) -> None:
         assert res.readline() == b"event: values\n"
         assert {"time", "date"} <= set(json.loads(res.readline().removeprefix(b"data: ")))
         assert res.readline() == b"\n"
+        assert res.readline() == b"event: mqtt\n"
+        assert json.loads(res.readline().removeprefix(b"data: "))["enabled"] is False
+        assert res.readline() == b"\n"
         web.service.hub.publish("key", {"index": 1, "pressed": True})
         assert res.readline() == b"event: key\n"
         assert json.loads(res.readline().removeprefix(b"data: ")) == {"index": 1, "pressed": True}
@@ -191,3 +194,40 @@ def test_key_endpoints_per_page(web: Web) -> None:
     assert web.json("PUT", "/api/pages/lights/keys/0/icon", raw=b"\x00" * KEY0) == (200, {"stored": True})
     assert web.json("PUT", "/api/pages/nope/keys/0/icon", raw=b"\x00" * KEY0)[0] == 404
     assert web.json("POST", "/api/pages/lights/keys/0/press") == (200, {"started": False})
+
+
+def test_mqtt_settings_never_return_the_password(web: Web, tmp_path: Path) -> None:
+    web.service.mqtt._path = tmp_path / "mqtt.json"
+    status, state = web.json("GET", "/api/mqtt")
+    assert (status, state["enabled"], state["password_set"]) == (200, False, False)
+    status, state = web.json("PUT", "/api/mqtt", {"host": "broker", "username": "me", "password": "s3cret"})
+    assert status == 200
+    assert state["host"] == "broker" and state["password_set"] is True
+    assert "password" not in state and "s3cret" not in json.dumps(web.json("GET", "/api/mqtt")[1])
+    assert "s3cret" not in json.dumps(web.json("GET", "/api/config")[1])
+    saved = tmp_path / "mqtt.json"
+    assert oct(saved.stat().st_mode & 0o777) == "0o600"
+    assert json.loads(saved.read_text())["password"] == "s3cret"
+    # Leaving the password out keeps it, null clears it.
+    assert web.json("PUT", "/api/mqtt", {"port": 8883, "tls": True})[1]["password_set"] is True
+    assert json.loads(saved.read_text())["password"] == "s3cret"
+    assert web.json("PUT", "/api/mqtt", {"password": None})[1]["password_set"] is False
+
+
+def test_mqtt_settings_validation_and_guards(web: Web) -> None:
+    assert web.json("PUT", "/api/mqtt", {"port": 0})[0] == 400
+    assert web.json("PUT", "/api/mqtt", {"tls": "yes"})[0] == 400
+    assert web.json("PUT", "/api/mqtt", raw=b"nope")[0] == 400
+    assert web.request("PUT", "/api/mqtt")[0] == 403  # needs the X-Deck-Request header
+
+
+def test_mqtt_action_is_only_reported_in_test_mode(web: Web) -> None:
+    cfg = {
+        "pages": [{"id": "root", "keys": [{"index": 0, "action": {"type": "mqtt", "topic": "a/b", "payload": "x"}}]}]
+    }
+    assert web.json("PUT", "/api/config", cfg)[0] == 200
+    events = web.service.hub.subscribe()
+    assert web.json("POST", "/api/keys/0/press") == (200, {"started": True})
+    assert ("action", {"index": 0, "type": "mqtt", "detail": "(test, not run) mqtt a/b x"}) in [
+        events.get_nowait() for _ in range(events.qsize())
+    ]

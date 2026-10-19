@@ -24,6 +24,7 @@ from d200_deck.errors import (
 )
 from d200_deck.service.host import HostService
 from d200_deck.service.keyactions import HOST_ACTIONS
+from d200_deck.web.mqtt_api import mqtt_state, update_mqtt
 
 log = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ def info_json(service: HostService) -> dict[str, Any]:
         "brightness": service.brightness.snapshot().to_json(),
         "page": service.page,
         "values": service.values(),
-        "variable_types": [cfgmod.VARIABLE_COMMAND],
+        "variable_types": [cfgmod.VARIABLE_COMMAND, cfgmod.VARIABLE_MQTT],
     }
 
 
@@ -129,6 +130,13 @@ class DeckHandler(BaseHTTPRequestHandler):
                 raise ApiError(HTTPStatus.BAD_REQUEST, str(e)) from e
             service.update_config(cfg)
             self._json(HTTPStatus.OK, cfgmod.to_json(cfg))
+        elif path == "/api/mqtt" and method == "GET":
+            self._json(HTTPStatus.OK, mqtt_state(service))
+        elif path == "/api/mqtt" and method == "PUT":
+            try:
+                self._json(HTTPStatus.OK, update_mqtt(service, self._body()))
+            except ConfigError as e:
+                raise ApiError(HTTPStatus.BAD_REQUEST, str(e)) from e
         elif path == "/api/events" and method == "GET":
             self._events()
         elif path == "/api/page" and method == "POST":
@@ -241,6 +249,7 @@ class DeckHandler(BaseHTTPRequestHandler):
             self._sse("brightness", service.brightness.snapshot().to_json())
             self._sse("page", {"page": service.page})
             self._sse("values", service.values())
+            self._sse("mqtt", mqtt_state(service))
             while not service.stop.is_set():
                 try:
                     message = q.get(timeout=KEEPALIVE_S)

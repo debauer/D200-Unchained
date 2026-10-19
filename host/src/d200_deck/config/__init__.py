@@ -26,6 +26,7 @@ from d200_deck.config.model import (
     Page,
     Variable,
 )
+from d200_deck.config.mqtt import MqttSettings, load_settings, parse_settings, save_settings
 from d200_deck.config.parse import parse
 from d200_deck.config.store import key_to_json, load, save, to_json
 
@@ -52,11 +53,15 @@ __all__ = [
     "ColorRule",
     "DeckConfig",
     "KeyConfig",
+    "MqttSettings",
     "Page",
     "Variable",
     "key_to_json",
     "load",
+    "load_settings",
     "parse",
+    "parse_settings",
     "save",
+    "save_settings",
     "to_json",
 ]

@@ -36,9 +36,9 @@ def test_poller_runs_at_the_interval_and_reports_changes() -> None:
     now = [0.0]
     outputs = iter(["1", "1", "2"])
     poller = VariablePoller(lambda values: None, runner=lambda v: next(outputs), clock=lambda: now[0])
-    poller.want([Variable("cpu", command="x", interval=5), Variable("lamp", "mqtt")])
+    poller.want([Variable("cpu", command="x", interval=5), Variable("lamp", "zigbee"), Variable("mq", "mqtt")])
     assert poller.poll_once() is True  # first values
-    assert poller.values() == {"cpu": "1", "lamp": UNSUPPORTED_VALUE}
+    assert poller.values() == {"cpu": "1", "lamp": UNSUPPORTED_VALUE}  # mqtt: pushed by the broker, not polled
     now[0] = 3
     assert poller.poll_once() is False  # not due yet
     now[0] = 5
@@ -46,7 +46,7 @@ def test_poller_runs_at_the_interval_and_reports_changes() -> None:
     now[0] = 10
     assert poller.poll_once() is True
     assert poller.values()["cpu"] == "2"
-    poller.want([Variable("lamp", "mqtt")])  # cpu no longer used: its value goes
+    poller.want([Variable("lamp", "zigbee")])  # cpu no longer used: its value goes
     assert poller.values() == {"lamp": UNSUPPORTED_VALUE}
 
 

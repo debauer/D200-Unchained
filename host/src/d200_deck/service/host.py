@@ -27,6 +27,7 @@ from d200_deck.service.brightness import Brightness
 from d200_deck.service.hub import EventHub
 from d200_deck.service.keyactions import ActionRunner
 from d200_deck.service.keyfiles import KeyFiles
+from d200_deck.service.mqtt import MqttService, PahoTransport, TransportFactory
 from d200_deck.service.variables import VariablePoller
 
 log = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ class ServiceSettings:
     poll_s: float = 0.5
     reconnect_s: float = 2.0
     bootstrap: Callable[[], None] | None = None  # bring deckd up (adb) before reconnecting
+    mqtt_path: Path | None = None  # broker settings file; None: MQTT stays off and settings are not saved
 
 
 def _connect(host: str, port: int) -> DeckClient:
@@ -57,7 +59,9 @@ def _mtime(path: Path) -> int | None:
 
 
 class HostService(KeyFiles):
-    def __init__(self, settings: ServiceSettings, connect: Connect = _connect) -> None:
+    def __init__(
+        self, settings: ServiceSettings, connect: Connect = _connect, mqtt_factory: TransportFactory = PahoTransport
+    ) -> None:
         self.settings = settings
         self._connect = connect
         self.stop = threading.Event()
@@ -70,7 +74,11 @@ class HostService(KeyFiles):
         self._lock = threading.Lock()  # serialises config read-modify-write from web threads
         # Runtime backlight state; the config value is only the start level.
         self.brightness = Brightness(self.config.brightness)
-        self.actions = ActionRunner(self.hub, self.brightness, self._set_level, self._navigate)
+        self.mqtt = MqttService(
+            self._publish_values, lambda status: self.hub.publish("mqtt", status), settings.mqtt_path, mqtt_factory
+        )
+        self.mqtt.configure(self.config.variables)
+        self.actions = ActionRunner(self.hub, self.brightness, self._set_level, self._navigate, self.mqtt.publish)
         self.renderer = KeyRenderer(settings.images_dir)
         self.store = KeyStore(settings.images_dir)
         self.page = ROOT  # page shown on the device
@@ -88,15 +96,21 @@ class HostService(KeyFiles):
         cfg, page, now = self.config, self.page, datetime.now()
         self._minute = now.minute
         self.poller.want(self.dynamic.variables(cfg, page))
-        dynamic = self.dynamic.pixels(cfg, info, page, self.poller.values(), now)
+        dynamic = self.dynamic.pixels(cfg, info, page, self._current(), now)
         self.renderer.render(client, info, cfg, self.brightness.snapshot().effective, page=page, dynamic=dynamic)
+
+    def _current(self) -> dict[str, str]:
+        return {**self.poller.values(), **self.mqtt.values()}
 
     def values(self) -> dict[str, str]:
         """Current placeholder values, built-ins included (for the web UI)."""
-        return {**self.poller.values(), **builtin_values(datetime.now())}
+        return {**self._current(), **builtin_values(datetime.now())}
 
-    def _values_changed(self, values: dict[str, str]) -> None:
-        self.hub.publish("values", {**values, **builtin_values(datetime.now())})
+    def _values_changed(self, _polled: dict[str, str]) -> None:
+        self._publish_values()
+
+    def _publish_values(self) -> None:
+        self.hub.publish("values", self.values())
         self._render_due.set()
 
     def show_page(self, page_id: str) -> None:
@@ -148,6 +162,7 @@ class HostService(KeyFiles):
         if cfg.brightness != self.config.brightness:
             self.hub.publish("brightness", self.brightness.set_level(cfg.brightness).to_json())
         self.config = cfg
+        self.mqtt.configure(cfg.variables)
         if not cfg.has_page(self.page):  # the shown page was deleted
             self.show_page(ROOT)
 
@@ -201,6 +216,7 @@ class HostService(KeyFiles):
         configured, bringing deckd up first). Repeated identical errors are logged once."""
         last_problem = ""
         threading.Thread(target=self.poller.run, args=(self.stop,), name="variables", daemon=True).start()
+        self.mqtt.start()
         if self.settings.bootstrap is not None:
             # Once at start even if deckd is reachable: a vendor app that came back
             # (or was never stopped) would keep drawing over deckd.
@@ -226,6 +242,7 @@ class HostService(KeyFiles):
                     last_problem = problem
                 self.stop.wait(self.settings.reconnect_s)
 
+        self.mqtt.close()
         self.hub.close_all()
 
     # --- operations used by the web API ---------------------------------

@@ -29,3 +29,8 @@ def deckd_binary() -> Path:
 
 def images_dir() -> Path:
     return data_dir() / "images"
+
+
+def mqtt_file() -> Path:
+    """Broker settings incl. the password: kept apart from config.json (which is exported and served by the API)."""
+    return config_dir() / "mqtt.json"

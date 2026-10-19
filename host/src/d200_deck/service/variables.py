@@ -8,7 +8,7 @@ import threading
 import time
 from collections.abc import Callable, Iterable
 
-from d200_deck.config import VARIABLE_COMMAND, Variable
+from d200_deck.config import VARIABLE_COMMAND, VARIABLE_MQTT, Variable
 
 log = logging.getLogger(__name__)
 
@@ -74,7 +74,8 @@ class VariablePoller:
         """Run what is due; True if a value changed."""
         now = self._clock()
         with self._lock:
-            due = [v for name, v in self._wanted.items() if self._due.get(name, 0.0) <= now]
+            # mqtt variables are pushed by the broker, see service/mqtt.py
+            due = [v for name, v in self._wanted.items() if v.type != VARIABLE_MQTT and self._due.get(name, 0.0) <= now]
             for v in due:
                 self._due[v.name] = now + v.interval
         changed = False
