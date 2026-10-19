@@ -84,19 +84,37 @@ static void dump_device_log(adb_t *a)
 }
 
 #ifdef CONFIG_D200_DEBUG
-/* What runs on the D200 a moment after the bootstrap, and what deckd says: if something else keeps painting
- * the screen, it shows up here. */
+static void log_lines(adb_t *a, const char *label, const char *service, size_t cap)
+{
+    char *text = malloc(cap);
+    if (!text) return;
+    if (adb_exec(a, service, text, cap) == ESP_OK) {
+        for (char *line = strtok(text, "\r\n"); line; line = strtok(NULL, "\r\n")) ESP_LOGI(TAG, "%s: %s", label, line);
+    } else {
+        ESP_LOGW(TAG, "%s: command failed", label);
+    }
+    free(text);
+}
+
+/* What runs on the D200 a moment after the bootstrap, what its framebuffer, display and backlight say, and
+ * who holds them. Then a white screen written straight into /dev/fb0 (no deckd): if it does not show up,
+ * something other than the framebuffer decides what the display shows. */
 static void diagnose(adb_t *a)
 {
     vTaskDelay(pdMS_TO_TICKS(3000));
-    char *text = malloc(3072);
-    if (!text) return;
-    if (adb_exec(a, "shell:ps 2>&1 | head -n 40; echo ---deckd.log---; tail -n 15 " DEVICE_LOG " 2>&1", text, 3072) == ESP_OK) {
-        for (char *line = strtok(text, "\r\n"); line; line = strtok(NULL, "\r\n")) ESP_LOGI(TAG, "diag: %s", line);
-    } else {
-        ESP_LOGW(TAG, "diagnostics failed");
-    }
-    free(text);
+    log_lines(a, "diag ps", "shell:ps 2>&1 | head -n 40", 3072);
+    log_lines(a, "diag deckd.log", "shell:tail -n 15 " DEVICE_LOG " 2>&1", 2048);
+    log_lines(a, "diag fb", "shell:for f in name virtual_size bits_per_pixel stride state blank; do "
+                            "echo $f=$(cat /sys/class/graphics/fb0/$f 2>&1); done; ls -l /dev/fb0 /dev/dri/ 2>&1", 2048);
+    log_lines(a, "diag drm", "shell:for c in /sys/class/drm/*; do echo $c $(cat $c/status $c/enabled 2>/dev/null); done", 2048);
+    log_lines(a, "diag backlight", "shell:for f in brightness actual_brightness bl_power max_brightness; do "
+                                   "echo $f=$(cat /sys/class/backlight/backlight/$f 2>&1); done", 1024);
+    log_lines(a, "diag dmesg", "shell:dmesg | grep -i -E 'drm|fb0|vop|panel|display|backlight|rockchip-drm' | tail -n 20", 4096);
+    log_lines(a, "diag openers", "shell:for p in /proc/[0-9]*; do ls -l $p/fd 2>/dev/null | grep -q -E 'fb0|dri/card' && "
+                                 "echo $(cat $p/comm) $p; done", 1024);
+    ESP_LOGI(TAG, "fb test: writing a white screen into /dev/fb0 for 3 s");
+    log_lines(a, "diag fb write", "shell:tr '\\000' '\\377' < /dev/zero | head -c 3686400 > /dev/fb0; echo exit:$?", 512);
+    vTaskDelay(pdMS_TO_TICKS(3000));
 }
 #endif
 
