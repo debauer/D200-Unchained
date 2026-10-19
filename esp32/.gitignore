@@ -9,3 +9,4 @@ sdkconfig.*
 .venv/
 main/deckd_blob.S
 uv-*.lock
+logs/

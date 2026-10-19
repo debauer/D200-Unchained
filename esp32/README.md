@@ -31,6 +31,10 @@ uv run pio run -t uploadfs        # web UI (../host/src/d200_deck/web/static) in
 uv run pio device monitor         # log, on the COM port
 ```
 
+`scripts/run.sh` does upload and monitor in one go and also writes the output to files
+(`logs/latest.log` for the monitor, `logs/upload.log` for build and upload; `--seconds 60`, `--no-upload`,
+`--fs`, `--port` see the header of the script).
+
 Flash the web UI again whenever the files in `host/.../web/static/` change. The log shows the IP
 address; open `http://<ip>/`. Attaching the D200 logs its USB ids and the ADB interface, then the bootstrap
 (`installing deckd`, `starting deckd`, `deckd is listening on the device`).
