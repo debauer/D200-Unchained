@@ -96,10 +96,10 @@ static esp_err_t next_frame(deckd_t *d, uint8_t *type, uint8_t *out, size_t cap,
     }
 }
 
-esp_err_t deckd_request(deckd_t *d, uint8_t type, const void *payload, size_t len, uint8_t *reply_type,
-                        uint8_t *reply, size_t cap, size_t *reply_len)
+/* Waits for the reply to the command just sent, passing KEY_EVENTs on. */
+static esp_err_t await_reply(deckd_t *d, uint8_t *reply_type, uint8_t *reply, size_t cap, size_t *reply_len)
 {
-    esp_err_t err = send_frame(d, type, payload, len);
+    esp_err_t err = ESP_OK;
     while (err == ESP_OK) {
         err = next_frame(d, reply_type, reply, cap, reply_len);
         if (err == ESP_OK && *reply_type == DECKD_KEY_EVENT) {
@@ -109,6 +109,36 @@ esp_err_t deckd_request(deckd_t *d, uint8_t type, const void *payload, size_t le
         break;
     }
     return err;
+}
+
+esp_err_t deckd_set_key_image_file(deckd_t *d, unsigned index, unsigned w, unsigned h, FILE *f, uint8_t *reply_type,
+                                   uint8_t *reply, size_t cap, size_t *reply_len)
+{
+    const size_t pixels = (size_t)w * h * 2;
+    d->tx[0] = DECKD_SET_KEY_IMAGE;
+    put_u32(d->tx + 1, 7 + pixels);
+    put_u16(d->tx + FRAME_HEADER, index);
+    d->tx[FRAME_HEADER + 2] = 0; /* RGB565 */
+    put_u16(d->tx + FRAME_HEADER + 3, w);
+    put_u16(d->tx + FRAME_HEADER + 5, h);
+    size_t used = FRAME_HEADER + 7, sent = 0;
+    esp_err_t err = ESP_OK;
+    while (err == ESP_OK && sent < pixels) {
+        size_t want = ADB_MAX_DATA - used < pixels - sent ? ADB_MAX_DATA - used : pixels - sent;
+        if (fread(d->tx + used, 1, want, f) != want) return ESP_FAIL; /* the file is shorter than announced */
+        err = write_chunk(d, d->tx, used + want);
+        sent += want;
+        used = 0;
+    }
+    return err == ESP_OK ? await_reply(d, reply_type, reply, cap, reply_len) : err;
+}
+
+esp_err_t deckd_request(deckd_t *d, uint8_t type, const void *payload, size_t len, uint8_t *reply_type,
+                        uint8_t *reply, size_t cap, size_t *reply_len)
+{
+    esp_err_t err = send_frame(d, type, payload, len);
+    if (err != ESP_OK) return err;
+    return await_reply(d, reply_type, reply, cap, reply_len);
 }
 
 /* --- self test ------------------------------------------------------------------------------------ */

@@ -7,7 +7,8 @@ read-only `www` partition) and the same web API (`../docs/web-api.md`).
 Current state: WiFi, web server with the shared UI, `/api/info` stub, USB enumeration of the D200
 the bootstrap (stops the vendor app, pushes the embedded `deckd` to the D200 if needed and starts it) and a
 `deckd` client. The web API serves `/api/info` with the real key windows, `/api/events` (key presses, status), and
-stores the configuration (`/api/config`). Key images, actions and drawing the configured keys are not done yet.
+stores the configuration (`/api/config`). Key images and icons are stored and drawn (the web UI composes them in the browser). Still missing: actions,
+page changes, and the renderer for text that changes (placeholders, the clock).
 
 ## Hardware
 

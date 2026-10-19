@@ -26,14 +26,17 @@ typedef struct {
 void device_init(void);
 void device_snapshot(device_state_t *out);
 
+/* The window of key `index`; false for an unknown key. */
+bool device_key_window(unsigned index, device_key_t *out);
+
 /* JSON for GET /api/info (needs `size` bytes, truncated otherwise); returns the length. */
 size_t device_info_json(char *out, size_t size);
 
 /* Body of the SSE event `name` ("status", "brightness", "page", "values") in its current state. */
 void device_event_json(const char *name, char *out, size_t size);
 
-/* The configuration changed: the device task redraws the keys at its next turn. */
-void device_request_redraw(void);
+/* Something changed: the device task redraws the key (or everything) at its next turn. */
+void device_request_redraw(int key); /* key < 0: everything */
 
 /* Runs against a bootstrapped D200: hello, initial brightness, then forwards key presses as events until the
  * link breaks. Returns when it does. */

@@ -11,6 +11,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "events.h"
+#include "keyfiles.h"
 #include "logbuf.h"
 
 static const char *TAG = "web";
@@ -33,7 +34,7 @@ static const char *type_of(const char *path)
     return "application/octet-stream";
 }
 
-static esp_err_t json_error(httpd_req_t *req, const char *status, const char *message)
+esp_err_t web_json_error(httpd_req_t *req, const char *status, const char *message)
 {
     char body[160];
     snprintf(body, sizeof body, "{\"error\":\"%s\"}", message);
@@ -44,14 +45,14 @@ static esp_err_t json_error(httpd_req_t *req, const char *status, const char *me
 
 /* --- protection (docs/web-api.md): changing requests need the header a foreign origin cannot set ---------- */
 
-static bool mutation_allowed(httpd_req_t *req)
+bool web_mutation_allowed(httpd_req_t *req)
 {
     char value[4];
     return httpd_req_get_hdr_value_str(req, "X-Deck-Request", value, sizeof value) == ESP_OK && value[0] == '1';
 }
 
 #define REQUIRE_HEADER(req) \
-    do { if (!mutation_allowed(req)) return json_error(req, "403 Forbidden", "missing X-Deck-Request header"); } while (0)
+    do { if (!web_mutation_allowed(req)) return web_json_error(req, "403 Forbidden", "missing X-Deck-Request header"); } while (0)
 
 /* --- static files --------------------------------------------------------------------------------------- */
 
@@ -59,11 +60,11 @@ static esp_err_t send_file(httpd_req_t *req)
 {
     char path[sizeof WWW + 64];
     const char *uri = strcmp(req->uri, "/") == 0 ? "/index.html" : req->uri;
-    if (strlen(uri) >= 64 || strstr(uri, "..")) return json_error(req, "404 Not Found", "not found");
+    if (strlen(uri) >= 64 || strstr(uri, "..")) return web_json_error(req, "404 Not Found", "not found");
     strlcpy(path, WWW, sizeof path);
     strlcat(path, uri, sizeof path);
     FILE *f = fopen(path, "rb");
-    if (!f) return json_error(req, "404 Not Found", "not found");
+    if (!f) return web_json_error(req, "404 Not Found", "not found");
     httpd_resp_set_type(req, type_of(path));
     char buf[1024];
     size_t n;
@@ -88,7 +89,7 @@ static esp_err_t api_config_get(httpd_req_t *req)
 {
     size_t length;
     char *text = config_load(&length);
-    if (!text) return json_error(req, "500 Internal Server Error", "out of memory");
+    if (!text) return web_json_error(req, "500 Internal Server Error", "out of memory");
     httpd_resp_set_type(req, "application/json");
     esp_err_t err = httpd_resp_send(req, text, length);
     free(text);
@@ -112,9 +113,9 @@ static const char *check_config(const char *text)
 static esp_err_t api_config_put(httpd_req_t *req)
 {
     REQUIRE_HEADER(req);
-    if (req->content_len == 0 || req->content_len > MAX_CONFIG) return json_error(req, "413 Payload Too Large", "config too large");
+    if (req->content_len == 0 || req->content_len > MAX_CONFIG) return web_json_error(req, "413 Payload Too Large", "config too large");
     char *body = malloc(req->content_len + 1);
-    if (!body) return json_error(req, "500 Internal Server Error", "out of memory");
+    if (!body) return web_json_error(req, "500 Internal Server Error", "out of memory");
     size_t got = 0;
     while (got < req->content_len) {
         int n = httpd_req_recv(req, body + got, req->content_len - got);
@@ -128,14 +129,17 @@ static esp_err_t api_config_put(httpd_req_t *req)
     const char *problem = check_config(body);
     if (problem) {
         free(body);
-        return json_error(req, "400 Bad Request", problem);
+        return web_json_error(req, "400 Bad Request", problem);
     }
     if (!config_store(body, got)) {
         ESP_LOGE(TAG, "cannot store the config");
         free(body);
-        return json_error(req, "500 Internal Server Error", "cannot store the config");
+        return web_json_error(req, "500 Internal Server Error", "cannot store the config");
     }
-    device_request_redraw();
+    cJSON *saved = cJSON_Parse(body);
+    if (saved) config_purge_images(saved); /* images of deleted pages */
+    cJSON_Delete(saved);
+    device_request_redraw(-1);
     httpd_resp_set_type(req, "application/json");
     esp_err_t err = httpd_resp_send(req, body, got);
     free(body);
@@ -152,7 +156,7 @@ static esp_err_t api_log(httpd_req_t *req)
         httpd_query_key_value(query, "since", value, sizeof value) == ESP_OK)
         since = strtoul(value, NULL, 10);
     char *text = malloc(LOG_CHUNK);
-    if (!text) return json_error(req, "500 Internal Server Error", "out of memory");
+    if (!text) return web_json_error(req, "500 Internal Server Error", "out of memory");
     uint32_t next;
     size_t n = logbuf_read(since, text, LOG_CHUNK, &next);
     char header[12];
@@ -170,7 +174,7 @@ static esp_err_t api_mqtt(httpd_req_t *req)
 {
     if (req->method == HTTP_PUT) {
         REQUIRE_HEADER(req);
-        return json_error(req, "501 Not Implemented", "MQTT is not supported by this host yet");
+        return web_json_error(req, "501 Not Implemented", "MQTT is not supported by this host yet");
     }
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, "{\"host\":\"\",\"port\":1883,\"username\":\"\",\"tls\":false,\"client_id\":\"\","
@@ -180,15 +184,15 @@ static esp_err_t api_mqtt(httpd_req_t *req)
 /* Everything else below /api that is not built yet. */
 static esp_err_t api_missing(httpd_req_t *req)
 {
-    if (req->method == HTTP_GET) return json_error(req, "404 Not Found", "not found");
-    return json_error(req, "501 Not Implemented", "not implemented on the ESP32 host yet");
+    if (req->method == HTTP_GET) return web_json_error(req, "404 Not Found", "not found");
+    return web_json_error(req, "501 Not Implemented", "not implemented on the ESP32 host yet");
 }
 
 esp_err_t web_start(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn = httpd_uri_match_wildcard;
-    cfg.max_uri_handlers = 16;
+    cfg.max_uri_handlers = 24;
     cfg.max_open_sockets = 10; /* event streams hold their socket */
     cfg.lru_purge_enable = true;
     cfg.stack_size = 8192;
@@ -196,12 +200,19 @@ esp_err_t web_start(void)
     esp_err_t err = httpd_start(&server, &cfg);
     if (err != ESP_OK) return err;
     events_start();
+    keyfiles_init();
     const httpd_uri_t routes[] = {
         {.uri = "/api/info", .method = HTTP_GET, .handler = api_info},
         {.uri = "/api/events", .method = HTTP_GET, .handler = events_handler},
         {.uri = "/api/config", .method = HTTP_GET, .handler = api_config_get},
         {.uri = "/api/config", .method = HTTP_PUT, .handler = api_config_put},
         {.uri = "/api/log", .method = HTTP_GET, .handler = api_log},
+        {.uri = "/api/keys/*", .method = HTTP_GET, .handler = keyfiles_handler},
+        {.uri = "/api/keys/*", .method = HTTP_PUT, .handler = keyfiles_handler},
+        {.uri = "/api/keys/*", .method = HTTP_DELETE, .handler = keyfiles_handler},
+        {.uri = "/api/pages/*", .method = HTTP_GET, .handler = keyfiles_handler},
+        {.uri = "/api/pages/*", .method = HTTP_PUT, .handler = keyfiles_handler},
+        {.uri = "/api/pages/*", .method = HTTP_DELETE, .handler = keyfiles_handler},
         {.uri = "/api/mqtt", .method = HTTP_GET, .handler = api_mqtt},
         {.uri = "/api/mqtt", .method = HTTP_PUT, .handler = api_mqtt},
         {.uri = "/api/*", .method = HTTP_GET, .handler = api_missing},

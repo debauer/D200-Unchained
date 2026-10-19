@@ -2,6 +2,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "device.h"
+#include "keyfiles.h"
 #include "logbuf.h"
 #include "usb_adb.h"
 #include "web.h"
@@ -30,6 +31,7 @@ void app_main(void)
     ESP_ERROR_CHECK(err);
     mount("www", "/www", true);
     mount("storage", "/storage", false);
+    keyfiles_init();
     device_init();
     usb_adb_start(); /* independent of WiFi */
     if (wifi_start() == ESP_OK) ESP_ERROR_CHECK(web_start());
