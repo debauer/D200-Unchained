@@ -154,9 +154,8 @@ esp_err_t web_auth_handler(httpd_req_t *req)
 {
     if (!strcmp(req->uri, "/auth/session") && req->method == HTTP_GET) return web_auth_status(req);
     if (!WEB_AUTH_ENABLED) return web_json_error(req, "404 Not Found", "authentication disabled");
-    if (WEB_OIDC_ENABLED && req->method == HTTP_GET &&
-        !strncmp(req->uri, OIDC_CALLBACK "?", sizeof OIDC_CALLBACK)) return web_oidc_callback(req);
-    if (WEB_OIDC_ENABLED && req->method == HTTP_GET && !strcmp(req->uri, OIDC_CALLBACK)) return web_oidc_callback(req);
+    if (WEB_OIDC_ENABLED && req->method == HTTP_GET && !strncmp(req->uri, OIDC_CALLBACK, sizeof OIDC_CALLBACK - 1) &&
+        (!req->uri[sizeof OIDC_CALLBACK - 1] || req->uri[sizeof OIDC_CALLBACK - 1] == '?')) return web_oidc_callback(req);
     if (req->method != HTTP_POST) return web_json_error(req, "405 Method Not Allowed", "method not allowed");
     if (!web_mutation_allowed(req)) return web_json_error(req, "403 Forbidden", "missing X-Deck-Request header");
     if (WEB_OIDC_ENABLED && !strcmp(req->uri, "/auth/oidc/start")) return web_oidc_start(req);
