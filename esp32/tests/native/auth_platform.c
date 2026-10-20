@@ -17,8 +17,8 @@ static pthread_cond_t response_ready = PTHREAD_COND_INITIALIZER;
 int64_t esp_timer_get_time(void) { return auth_test_now; }
 void esp_fill_random(void *out, size_t size)
 {
-    static unsigned char next;
-    for (size_t i = 0; i < size; i++) ((unsigned char *)out)[i] = next++;
+    static uint32_t next = 1;
+    for (size_t i = 0; i < size; i++) { next = next * 1664525u + 1013904223u; ((unsigned char *)out)[i] = next >> 24; }
 }
 void events_revoke(uint64_t ticket) { auth_test_revoked = ticket; }
 SemaphoreHandle_t xSemaphoreCreateMutex(void)
@@ -107,6 +107,18 @@ int httpd_req_recv(httpd_req_t *req, char *out, size_t size)
     return 1;
 }
 int httpd_req_to_sockfd(httpd_req_t *req) { return req->fd; }
+size_t httpd_req_get_url_query_len(httpd_req_t *req)
+{
+    const char *query = strchr(req->uri, '?');
+    return query ? strlen(query + 1) : 0;
+}
+esp_err_t httpd_req_get_url_query_str(httpd_req_t *req, char *out, size_t size)
+{
+    const char *query = strchr(req->uri, '?');
+    if (!query || strlen(++query) >= size) return ESP_FAIL;
+    strcpy(out, query);
+    return ESP_OK;
+}
 esp_err_t httpd_resp_set_hdr(httpd_req_t *req, const char *name, const char *value)
 {
     assert(req->header_count < 8);
@@ -127,12 +139,18 @@ esp_err_t httpd_resp_sendstr(httpd_req_t *req, const char *text)
     snprintf(target->response, sizeof target->response, "%s", text);
     if (target != req || !req->response_status[0])
         snprintf(target->response_status, sizeof target->response_status, "%s", req->response_status[0] ? req->response_status : "200 OK");
-    for (unsigned i = 0; i < req->header_count; i++) if (!strcmp(req->header_names[i], "Set-Cookie"))
-        snprintf(target->response_cookie, sizeof target->response_cookie, "%s", req->header_values[i]);
+    for (unsigned i = 0; i < req->header_count; i++) {
+        if (!strcmp(req->header_names[i], "Location")) snprintf(target->response_location, sizeof target->response_location, "%s", req->header_values[i]);
+        if (!strcmp(req->header_names[i], "Set-Cookie")) {
+            char *cookie = target->response_cookie[0] ? target->response_cookie2 : target->response_cookie;
+            snprintf(cookie, sizeof target->response_cookie, "%s", req->header_values[i]);
+        }
+    }
     return ESP_OK;
 }
 esp_err_t httpd_req_async_handler_begin(httpd_req_t *req, httpd_req_t **copy)
 {
+    req->asynchronous = true;
     *copy = malloc(sizeof **copy);
     assert(*copy);
     **copy = *req;

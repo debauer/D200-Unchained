@@ -25,9 +25,11 @@ bool oidc_jwt_kid(const char *token, char kid[129])
     if (!dot || size > OIDC_MAX_TOKEN) return false;
     cJSON *header = segment(token, dot - token, 1024);
     const cJSON *id = field(header, "kid");
+    const cJSON *type = field(header, "typ");
     bool valid = text_is(field(header, "alg"), "RS256") && cJSON_IsString(id) && id->valuestring[0] &&
                  strlen(id->valuestring) <= 128 && !field(header, "crit") && !field(header, "b64") &&
-                 !field(header, "jku") && !field(header, "jwk") && !field(header, "x5u");
+                 !field(header, "jku") && !field(header, "jwk") && !field(header, "x5u") &&
+                 (!type || text_is(type, "JWT") || text_is(type, "application/jwt"));
     if (valid) strcpy(kid, id->valuestring);
     cJSON_Delete(header);
     return valid;

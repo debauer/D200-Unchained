@@ -14,6 +14,7 @@ typedef struct {
     uint64_t expires;
     uint32_t generation;
     char user[AUTH_USER_LENGTH + 1];
+    char identity[65];
 } auth_session_t;
 
 typedef struct {
@@ -23,6 +24,7 @@ typedef struct {
 
 /* All times are monotonic microseconds; the caller serializes access. Zero means no session. */
 uint64_t auth_store_create(auth_store_t *store, const uint8_t hash[32], const char *user, uint64_t now, uint32_t ttl);
+uint64_t auth_store_create_as(auth_store_t *store, const uint8_t hash[32], const char *user, const char *identity, uint64_t now, uint32_t ttl);
 uint64_t auth_store_find(const auth_store_t *store, const uint8_t hash[32], uint64_t now);
 const auth_session_t *auth_store_get(const auth_store_t *store, uint64_t ticket, uint64_t now);
 void auth_store_revoke(auth_store_t *store, uint64_t ticket);

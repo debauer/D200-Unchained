@@ -14,5 +14,6 @@ esp_err_t web_auth_handler(httpd_req_t *req);
 esp_err_t web_auth_login_init(void);
 esp_err_t web_auth_login(httpd_req_t *req);
 bool web_auth_create(httpd_req_t *req, uint64_t previous, const char *user);
+bool web_auth_create_oidc(httpd_req_t *req, uint64_t previous, const char *user, const char *identity);
 void web_auth_revoke(uint64_t ticket);
 esp_err_t web_auth_status(httpd_req_t *req);

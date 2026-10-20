@@ -98,6 +98,20 @@ test("simultaneous 401s share one login", async (t) => {
   assert.equal(logins, 1);
 });
 
+test("a colliding display name cannot retain another identity's pending edits", async (t) => {
+  t.mock.method(api, "authSession", async () => ({ ...session("admin"), authenticated: false, methods: ["password", "oidc"] }));
+  for (const [identity, same] of [["local-identity", true], ["oidc-subject-identity", false]]) {
+    t.mock.method(api, "login", async () => ({ ...session("admin"), identity }));
+    const { auth, autosave } = flow(t, [{ username: "admin", password: "x" }]);
+    auth.setUser({ ...session("admin"), identity: "local-identity" });
+    autosave.touchConfig();
+    clearTimeout(autosave.timer);
+    assert.equal(await auth.recover(), same);
+    assert.equal(autosave.configDirty, same);
+    clearTimeout(autosave.timer);
+  }
+});
+
 function browserGlobals(t, values) {
   for (const [name, value] of Object.entries(values)) {
     const original = Object.getOwnPropertyDescriptor(globalThis, name);

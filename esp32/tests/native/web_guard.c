@@ -8,6 +8,7 @@
 
 static int denied, dispatched;
 bool web_auth_guard(httpd_req_t *req) { (void)req; return true; }
+esp_err_t httpd_resp_set_hdr(httpd_req_t *req, const char *name, const char *value) { (void)req; (void)name; (void)value; return ESP_OK; }
 size_t httpd_req_get_hdr_value_len(httpd_req_t *req, const char *name)
 {
     assert(!strcmp(name, "Origin"));
@@ -48,7 +49,7 @@ int main(void)
     char host[64];
     snprintf(host, sizeof host, "127.0.0.1:%u", ntohs(address.sin_port));
     const httpd_uri_t target = {.handler = route};
-    httpd_req_t req = {.fd = fd, .host = host, .user_ctx = (void *)&target};
+    httpd_req_t req = {.fd = fd, .host = host, .user_ctx = (void *)&target, .uri = "/api/info"};
     assert(web_host_allowed(&req));
     assert(web_guarded_request(&req) == ESP_OK && dispatched == 1 && denied == 0);
     const char *bad[] = {NULL, "evil.example", "127.0.0.1.evil.example", "127.0.0.1:1", "127.0.0.1:80@evil.example"};

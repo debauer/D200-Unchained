@@ -81,10 +81,8 @@ all features below are already available.
 - Validate time before OIDC token acceptance; local login remains independent
   of NTP/Keycloak availability.
 - Refresh JWKS once on an unknown kid, with rate limiting and bounded keys.
-- Proposed authorization: explicit `deck-admin` Keycloak client role included
-  in the signed ID token; realm membership alone is not enough. Confirm this
-  policy before implementing the role check. Confirmed by the user: require
-  the `deck-admin` client role in the signed ID token.
+- Confirmed authorization: explicit `deck-admin` Keycloak client role included
+  in the signed ID token; realm membership alone is not enough.
 - Successful OIDC login creates the same local session as password login.
 - Initial logout ends the device session; Keycloak SSO remains active. Global
   logout and immediate propagation of role withdrawal are later extensions.
@@ -108,8 +106,9 @@ all features below are already available.
 - [x] Build configuration, verifier helper and configurable HTTP/HTTPS.
 - [x] Sessions, local login, route protection and SSE revocation.
 - [x] Shared login/logout UI and authentication-loss handling.
-- [ ] Keycloak OIDC and authorization policy.
-- [ ] Integration/hardware verification and final documentation.
+- [x] Keycloak OIDC and authorization policy.
+- [x] Automated OIDC integration/adapter tests and configuration documentation.
+- [ ] Real ESP32/Keycloak deployment and hardware verification.
 
 Commit each verified implementation stage. Update this progress section with
 the actual tests and remaining limitations; do not mark unimplemented OIDC
@@ -128,9 +127,8 @@ The shared browser login was subsequently added in parallel in commit
 `e9881dd` (Linux authentication backend: `b35698a`). Both backends use the
 same `/auth/session`, `/auth/login`, `/auth/logout` contract and cookie
 policies. All 30 JavaScript tests pass, including missing-session recovery,
-pending-edit retention for the same user and logout behavior. Keycloak OIDC
-is still unimplemented; its role policy and certificate provisioning remain
-open as described above.
+pending-edit retention for the same user and logout behavior. At that stage,
+ESP32 Keycloak OIDC was not yet implemented; see the completed stage below.
 
 ### ESP32 OIDC implementation
 
@@ -139,6 +137,33 @@ increment contains build-time OIDC settings, bounded one-use browser
 transactions, PKCE/S256, strict JSON/base64url parsing and RS256/JWK/claim
 validation with the existing mbedTLS library. Independent Python-signed token
 vectors cover issuer/audience/azp/nonce/time checks, signatures, roles and
-stable issuer/subject identities. Six configuration tests pass. The HTTP
-worker/endpoints are the next increment; this primitives-only increment does
-not advertise a working firmware OIDC login yet.
+stable issuer/subject identities. Six configuration tests pass. This first
+increment was committed as `be6d0bf` before the endpoints were connected.
+
+The full firmware flow now implements discovery, bounded code exchange,
+JWKS caching/rotation and the browser-bound one-use callback. It creates the
+same local session as password login, with a separate opaque identity based
+on issuer/subject. The shared UI supports the Keycloak button and uses this
+identity for pending-edit recovery. HTTP/HTTPS remain configurable and the
+session default remains 48 hours. OIDC builds require the 2048-byte SDK URI
+limit, including when an older sdkconfig exists.
+
+Verification covers actual firmware crypto/flow code with SDK/HTTP/provider
+adapters: wrong/duplicate state, foreign browser, replay/expiry, role denial,
+wrong nonce/signature/issuer, rotation throttling, unset clock and provider
+outage with local login available. Separate network-adapter tests cover both
+CA modes, partial reads/writes, response limits, timeouts, truncation and
+redirect refusal. Six Python configuration tests and all 33 JavaScript tests
+pass. Setup and limits are in [esp32-oidc.md](esp32-oidc.md).
+
+Still open: a real realm/device login and concurrent on-device TLS/USB/MQTT
+testing. The automated provider is simulated; signing and verification use
+real RSA with independent Python-generated fixtures.
+
+Final automated checks: five native OIDC test programs passed (core, both
+cookie/flow modes, and both CA/HTTP-adapter modes); AddressSanitizer and UBSan
+passed for the portable crypto/codec/transaction code. The eleven existing
+native regression programs and both local-login API tests passed. All six
+Python configuration tests and 33 JavaScript tests passed. OIDC-enabled HTTP
+and HTTPS firmware profiles, the normal unconfigured build and the shared
+LittleFS web image built successfully with ESP-IDF 5.5.3. No device was flashed.

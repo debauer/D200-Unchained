@@ -50,6 +50,7 @@ esp_err_t web_guarded_request(httpd_req_t *req)
     if (!web_host_allowed(req)) return web_json_error(req, "403 Forbidden", "unexpected Host header");
     if (req->method != HTTP_GET && !web_origin_allowed(req)) return web_json_error(req, "403 Forbidden", "unexpected Origin");
     if (!web_auth_guard(req)) return ESP_FAIL; /* Close after 401; a changing request may have an unread body. */
+    if (!strncmp(req->uri, "/auth/", 6)) httpd_resp_set_hdr(req, "Referrer-Policy", "no-referrer");
     const httpd_uri_t *route = req->user_ctx;
     return route->handler(req);
 }

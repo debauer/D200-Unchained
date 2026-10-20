@@ -82,7 +82,7 @@ deckd = find_deckd()
 blobs = ".section .rodata.blobs,\"a\",@progbits\n.balign 4\n" + "".join(
     section(name, path)
     for name, path in (("deckd", deckd), ("font_bold", convert_font(700)), ("font_medium", convert_font(500)),
-                       ("web_cert", web_config["cert"]), ("web_key", web_config["key"]))
+                       ("web_cert", web_config["cert"]), ("web_key", web_config["key"]), ("oidc_ca", web_config["oidc"]["ca"]))
 )
 target = project / "main/blobs.S"
 if not target.exists() or target.read_text() != blobs:

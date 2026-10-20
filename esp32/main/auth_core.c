@@ -12,9 +12,9 @@ const auth_session_t *auth_store_get(const auth_store_t *store, uint64_t ticket,
     return s->generation && s->generation == ticket >> 8 && now < s->expires ? s : NULL;
 }
 
-uint64_t auth_store_create(auth_store_t *store, const uint8_t hash[32], const char *user, uint64_t now, uint32_t ttl)
+uint64_t auth_store_create_as(auth_store_t *store, const uint8_t hash[32], const char *user, const char *identity, uint64_t now, uint32_t ttl)
 {
-    if (!ttl || strlen(user) > AUTH_USER_LENGTH) return 0;
+    if (!ttl || strlen(user) > AUTH_USER_LENGTH || strlen(identity) > 64) return 0;
     for (unsigned i = 0; i < AUTH_MAX_SESSIONS; i++) {
         auth_session_t *s = &store->sessions[i];
         if (s->generation && now < s->expires) continue;
@@ -22,9 +22,15 @@ uint64_t auth_store_create(auth_store_t *store, const uint8_t hash[32], const ch
         *s = (auth_session_t){.generation = store->generation, .expires = now + (uint64_t)ttl * 1000000};
         memcpy(s->hash, hash, sizeof s->hash);
         strcpy(s->user, user);
+        strcpy(s->identity, identity);
         return ticket_for(i, s->generation);
     }
     return 0;
+}
+
+uint64_t auth_store_create(auth_store_t *store, const uint8_t hash[32], const char *user, uint64_t now, uint32_t ttl)
+{
+    return auth_store_create_as(store, hash, user, user, now, ttl);
 }
 
 uint64_t auth_store_find(const auth_store_t *store, const uint8_t hash[32], uint64_t now)

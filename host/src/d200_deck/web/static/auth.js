@@ -50,6 +50,8 @@ const OIDC_ERRORS = {
   forbidden: "This account may not use the deck (role missing).",
   token: "The identity provider's answer was refused.",
   provider: "The identity provider cannot be reached.",
+  clock: "The panel clock is not synchronized yet. Try again or use local login.",
+  capacity: "The panel has no free login sessions. Try again later.",
 };
 
 // `?auth_error=<code>` is what the OIDC callback leaves in the URL after a failed login.
@@ -65,6 +67,7 @@ export class AuthFlow {
   constructor({ view, autosave, stop }) {
     Object.assign(this, { view, autosave, stop });
     this.username = null;
+    this.identity = null;
     this.recovering = null;
   }
 
@@ -78,6 +81,7 @@ export class AuthFlow {
 
   setUser(session) {
     this.username = session.required ? session.username : null;
+    this.identity = session.required ? (session.identity ?? session.username) : null;
     this.view.setUser(this.username, session.required);
   }
 
@@ -114,11 +118,11 @@ export class AuthFlow {
   }
 
   async relogin() {
-    const previous = this.username;
+    const previous = this.identity ?? this.username;
     this.autosave.pause();
     this.stop();
     await this.login();
-    const same = previous === this.username;
+    const same = previous === this.identity;
     if (same) this.autosave.resume();
     else this.autosave.discard();
     return same;

@@ -53,6 +53,7 @@ def generate(output):
         ("critical extension", {"alg": "RS256", "kid": "k1", "crit": ["x"]}),
         ("remote key", {"alg": "RS256", "kid": "k1", "jku": "http://evil.example"}),
         ("unknown kid", {"alg": "RS256", "kid": "other"}),
+        ("access token type", {"alg": "RS256", "kid": "k1", "typ": "at+jwt"}),
     ]:
         add(name, expected="token", header=head)
     raw = json.dumps(claims).encode()

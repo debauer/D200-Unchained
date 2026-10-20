@@ -61,7 +61,7 @@ is the program that stores the configuration, draws the keys and reacts to key p
 | Images and text | browser for static images, Python for dynamic keys | browser for static images, firmware for dynamic keys (same font/layout) |
 | Python library | yes ([docs/python-library.md](docs/python-library.md)) | no |
 | Autostart | systemd user unit | boots with the power |
-| Security | optional password login (`deck passwd`), TLS through a reverse proxy ([docker/](docker/README.md)); without it keep it on `127.0.0.1` | no authentication yet, anyone in your WiFi can use the UI; MQTT password is stored unencrypted in flash |
+| Security | optional password login (`deck passwd`), TLS through a reverse proxy ([docker/](docker/README.md)); without it keep it on `127.0.0.1` | optional local password + native Keycloak OIDC, configurable HTTP/HTTPS ([setup](docs/esp32-oidc.md)); flash is unencrypted |
 | Status | usable | work in progress, see `esp32/README.md` |
 
 Pick the Linux host if you want shell commands on key presses or live values from your system.

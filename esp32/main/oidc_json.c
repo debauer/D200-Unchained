@@ -20,15 +20,18 @@ static bool utf8(const unsigned char *s, size_t length)
     return true;
 }
 
-static bool unique(const cJSON *node)
+static bool unique(const cJSON *node, unsigned *budget)
 {
     const cJSON *child;
+    unsigned count = 0;
     cJSON_ArrayForEach(child, node) {
+        if (!*budget || ++count > (cJSON_IsObject(node) ? 128u : 512u)) return false;
+        --*budget;
         if (cJSON_IsObject(node)) {
             for (const cJSON *previous = node->child; previous != child; previous = previous->next)
                 if (!strcmp(previous->string, child->string)) return false;
         }
-        if ((cJSON_IsArray(child) || cJSON_IsObject(child)) && !unique(child)) return false;
+        if ((cJSON_IsArray(child) || cJSON_IsObject(child)) && !unique(child, budget)) return false;
     }
     return true;
 }
@@ -51,8 +54,9 @@ cJSON *oidc_json(const char *text, size_t length)
         if (c == '}' || c == ']') { if (!depth) return NULL; depth--; }
     }
     const char *end;
+    unsigned budget = 2048;
     cJSON *json = cJSON_ParseWithLengthOpts(text, length, &end, false);
     while (json && end < text + length && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n')) end++;
-    if (!cJSON_IsObject(json) || end != text + length || !unique(json)) { cJSON_Delete(json); return NULL; }
+    if (!cJSON_IsObject(json) || end != text + length || !unique(json, &budget)) { cJSON_Delete(json); return NULL; }
     return json;
 }

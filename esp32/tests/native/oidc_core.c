@@ -25,6 +25,12 @@ static void codec(void)
     assert(!oidc_same_origin("http://id.example/keys", "https://id.example/realms/test"));
     const char *bad[] = {"{\"a\":1,\"a\":2}", "{} trailing", "{\"a\":\"x\\u0000y\"}", "{\"a\":\"\xff\"}"};
     for (unsigned i = 0; i < sizeof bad / sizeof bad[0]; i++) assert(!oidc_json(bad[i], strlen(bad[i])));
+    char many[4096];
+    size_t used = 0;
+    many[used++] = '{';
+    for (unsigned i = 0; i < 129; i++) used += snprintf(many + used, sizeof many - used, "%s\"field%u\":0", i ? "," : "", i);
+    many[used++] = '}';
+    assert(!oidc_json(many, used)); /* Bound duplicate-key scanning, not only input bytes/depth. */
 }
 
 static void transactions(void)

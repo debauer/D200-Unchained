@@ -34,6 +34,10 @@ def main():
     https = {"web": {"transport": "https", "public_origin": "https://deck.example",
                       "certificate": str(output / "cert.pem"), "private_key": str(output / "key.pem")}, "auth": auth}
     (output / "https.json").write_text(json.dumps(https))
+    oidc = {"issuer": "http://id.example/realms/test", "client_id": "deck"}
+    (output / "oidc-http.json").write_text(json.dumps({**http, "auth": {**auth, "oidc": oidc}}))
+    (output / "oidc-https.json").write_text(json.dumps({**https, "auth": {**auth, "oidc": {
+        **oidc, "issuer": "https://id.example/realms/test", "ca_file": str(output / "cert.pem")}}}))
 
 
 if __name__ == "__main__":

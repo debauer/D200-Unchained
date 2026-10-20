@@ -19,13 +19,16 @@ typedef struct httpd_req {
     struct httpd_req *parent;
     const char *header_names[8], *header_values[8];
     unsigned header_count;
-    char response[1024], response_cookie[256], response_status[64];
+    char response[4096], response_cookie[256], response_cookie2[256], response_status[64], response_location[256];
     bool done;
+    bool asynchronous;
 } httpd_req_t;
 typedef struct { esp_err_t (*handler)(httpd_req_t *); } httpd_uri_t;
 esp_err_t httpd_req_get_hdr_value_str(httpd_req_t *req, const char *name, char *out, size_t size);
 int httpd_req_to_sockfd(httpd_req_t *req);
 int httpd_req_recv(httpd_req_t *req, char *out, size_t size);
+size_t httpd_req_get_url_query_len(httpd_req_t *req);
+esp_err_t httpd_req_get_url_query_str(httpd_req_t *req, char *out, size_t size);
 size_t httpd_req_get_hdr_value_len(httpd_req_t *req, const char *name);
 esp_err_t httpd_resp_set_hdr(httpd_req_t *req, const char *name, const char *value);
 esp_err_t httpd_resp_set_type(httpd_req_t *req, const char *type);

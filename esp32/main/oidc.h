@@ -54,5 +54,5 @@ typedef struct {
 /* The caller serializes this client (one OIDC worker). */
 char *oidc_authorization(oidc_client_t *client, const oidc_transaction_t *tx, uint64_t now);
 const char *oidc_exchange(oidc_client_t *client, const char *code, const oidc_transaction_t *tx,
-                          uint64_t now, int64_t unix_time, oidc_identity_t *out);
+                          uint64_t now, int64_t (*clock)(void), oidc_identity_t *out);
 void oidc_client_free(oidc_client_t *client);

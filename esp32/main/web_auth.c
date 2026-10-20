@@ -12,6 +12,7 @@
 #include "mbedtls/sha256.h"
 #include "web.h"
 #include "web_settings.h"
+#include "web_oidc.h"
 
 static auth_store_t s_store;
 static SemaphoreHandle_t s_lock;
@@ -23,7 +24,11 @@ esp_err_t web_auth_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
     if (!s_lock) return ESP_ERR_NO_MEM;
-    return WEB_AUTH_ENABLED ? web_auth_login_init() : ESP_OK;
+    if (WEB_AUTH_ENABLED) {
+        esp_err_t err = web_auth_login_init();
+        if (err != ESP_OK) return err;
+    }
+    return WEB_OIDC_ENABLED ? web_oidc_init() : ESP_OK;
 }
 
 uint64_t web_auth_ticket(httpd_req_t *req)
@@ -57,7 +62,7 @@ void web_auth_revoke(uint64_t ticket)
     events_revoke(ticket);
 }
 
-bool web_auth_create(httpd_req_t *req, uint64_t previous, const char *user)
+static bool create_session(httpd_req_t *req, uint64_t previous, const char *user, const char *identity, bool redirect)
 {
     uint8_t random[32], hash[32];
     char token[AUTH_TOKEN_LENGTH + 1];
@@ -66,7 +71,7 @@ bool web_auth_create(httpd_req_t *req, uint64_t previous, const char *user)
     if (mbedtls_sha256((const uint8_t *)token, AUTH_TOKEN_LENGTH, hash, 0) != 0) return false;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     auth_store_revoke(&s_store, previous);
-    uint64_t ticket = auth_store_create(&s_store, hash, user, esp_timer_get_time(), WEB_SESSION_TTL);
+    uint64_t ticket = auth_store_create_as(&s_store, hash, user, identity, esp_timer_get_time(), WEB_SESSION_TTL);
     xSemaphoreGive(s_lock);
     events_revoke(previous);
     if (!ticket) return false;
@@ -74,19 +79,40 @@ bool web_auth_create(httpd_req_t *req, uint64_t previous, const char *user)
     snprintf(cookie, sizeof cookie, "%s=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=%u%s", WEB_COOKIE_NAME,
              token, WEB_SESSION_TTL, WEB_TLS ? "; Secure" : "");
     httpd_resp_set_hdr(req, "Set-Cookie", cookie);
-    esp_err_t err = status_send(req, ticket); /* cookie stays alive until the nested response is sent. */
+    esp_err_t err;
+    if (redirect) {
+        httpd_resp_set_status(req, "302 Found");
+        httpd_resp_set_hdr(req, "Location", "/");
+        err = httpd_resp_sendstr(req, "");
+    } else err = status_send(req, ticket); /* cookie stays alive until the nested response is sent. */
     if (err != ESP_OK) web_auth_revoke(ticket);
     return true; /* The response was attempted; never send a second one on the same request. */
+}
+
+bool web_auth_create(httpd_req_t *req, uint64_t previous, const char *user)
+{
+    char subject[AUTH_USER_LENGTH + 10], identity[65];
+    int size = snprintf(subject, sizeof subject, "password:%s", user);
+    uint8_t hash[32];
+    if (size < 0 || (size_t)size >= sizeof subject || mbedtls_sha256((const uint8_t *)subject, size, hash, 0)) return false;
+    for (unsigned i = 0; i < sizeof hash; i++) snprintf(identity + 2 * i, 3, "%02x", hash[i]);
+    return create_session(req, previous, user, identity, false);
+}
+
+bool web_auth_create_oidc(httpd_req_t *req, uint64_t previous, const char *user, const char *identity)
+{
+    return create_session(req, previous, user, identity, true);
 }
 
 static esp_err_t status_send(httpd_req_t *req, uint64_t ticket)
 {
     char user[AUTH_USER_LENGTH + 1] = "";
+    char identity[65] = "";
     uint32_t remaining = 0;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     uint64_t now = esp_timer_get_time();
     const auth_session_t *s = auth_store_get(&s_store, ticket, now);
-    if (s) { strcpy(user, s->user); remaining = (uint32_t)((s->expires - now + 999999) / 1000000); }
+    if (s) { strcpy(user, s->user); strcpy(identity, s->identity); remaining = (uint32_t)((s->expires - now + 999999) / 1000000); }
     xSemaphoreGive(s_lock);
     cJSON *o = cJSON_CreateObject();
     if (!o) return web_json_error(req, "500 Internal Server Error", "out of memory");
@@ -96,8 +122,11 @@ static esp_err_t status_send(httpd_req_t *req, uint64_t ticket)
     cJSON_AddNumberToObject(o, "expires_in", remaining);
     cJSON *methods = cJSON_AddArrayToObject(o, "methods");
     if (WEB_AUTH_ENABLED) cJSON_AddItemToArray(methods, cJSON_CreateString("password"));
+    if (WEB_OIDC_ENABLED) cJSON_AddItemToArray(methods, cJSON_CreateString("oidc"));
     if (user[0]) cJSON_AddStringToObject(o, "username", user);
     else cJSON_AddNullToObject(o, "username");
+    if (identity[0]) cJSON_AddStringToObject(o, "identity", identity);
+    else cJSON_AddNullToObject(o, "identity");
     char *text = cJSON_PrintUnformatted(o);
     cJSON_Delete(o);
     if (!text) return web_json_error(req, "500 Internal Server Error", "out of memory");
@@ -125,8 +154,12 @@ esp_err_t web_auth_handler(httpd_req_t *req)
 {
     if (!strcmp(req->uri, "/auth/session") && req->method == HTTP_GET) return web_auth_status(req);
     if (!WEB_AUTH_ENABLED) return web_json_error(req, "404 Not Found", "authentication disabled");
+    if (WEB_OIDC_ENABLED && req->method == HTTP_GET &&
+        !strncmp(req->uri, OIDC_CALLBACK "?", sizeof OIDC_CALLBACK)) return web_oidc_callback(req);
+    if (WEB_OIDC_ENABLED && req->method == HTTP_GET && !strcmp(req->uri, OIDC_CALLBACK)) return web_oidc_callback(req);
     if (req->method != HTTP_POST) return web_json_error(req, "405 Method Not Allowed", "method not allowed");
     if (!web_mutation_allowed(req)) return web_json_error(req, "403 Forbidden", "missing X-Deck-Request header");
+    if (WEB_OIDC_ENABLED && !strcmp(req->uri, "/auth/oidc/start")) return web_oidc_start(req);
     if (!strcmp(req->uri, "/auth/login")) return web_auth_login(req);
     if (!strcmp(req->uri, "/auth/logout")) {
         uint64_t ticket = web_auth_ticket(req);

@@ -1,9 +1,9 @@
 # ESP32 web authentication
 
 Current implementation: local password login, cookie sessions, configurable
-HTTP/HTTPS and session lifetime. Native Keycloak OIDC is the next stage; see
-[web-auth-plan.md](web-auth-plan.md). The current firmware advertises only the
-implemented `password` login method.
+HTTP/HTTPS and session lifetime, plus native Keycloak OIDC. See
+[esp32-oidc.md](esp32-oidc.md) for realm/client configuration and the flow.
+The firmware advertises `password` and, when configured, `oidc`.
 
 ## Configure and build
 
@@ -96,11 +96,13 @@ still required.
 
 | Method | Path | Behavior |
 |---|---|---|
-| GET | `/auth/session` | `required`, `authenticated`, `methods`, `username`, `expires_in`, `session_ttl_seconds` |
+| GET | `/auth/session` | `required`, `authenticated`, `methods`, `username`, opaque `identity`, `expires_in`, `session_ttl_seconds` |
 | POST | `/auth/login` | JSON `username` and `password`; 200 with session state and Set-Cookie, 401 for invalid credentials |
 | POST | `/auth/logout` | Revoke current cookie session and clear cookie; idempotent when expired |
+| POST | `/auth/oidc/start` | Configured Keycloak login: JSON redirect URL and transaction cookie |
+| GET | `/auth/oidc/callback` | One-use browser callback; 302 to the UI on success/error |
 
-Both POST endpoints need `X-Deck-Request: 1`. The local login has full panel
+All POST endpoints need `X-Deck-Request: 1`. The local login has full panel
 permissions. The shared browser login supports these endpoints on both
 backends: it prompts for credentials before loading the panel, provides
 logout and handles expired sessions without submitting pending edits as
@@ -119,6 +121,7 @@ another user. Firmware and the shared web partition must both be updated.
   ignored `.pio/auth-fixtures/` for compile checks. Never flash these known test
   credentials. Both authenticated HTTP and HTTPS firmware builds are checked.
 
-No real device was flashed. Keycloak code/claim validation, browser testing on
-the physical panel, certificate provisioning and on-device transport/heap tests
-remain separate stages.
+`bash scripts/test_oidc.sh` additionally checks the complete native OIDC flow,
+RS256/claims, replay and role checks, rotation and provider failures. No real
+device was flashed. A real ESP32/Keycloak deployment, certificate provisioning
+and on-device transport/heap tests remain separate deployment checks.

@@ -21,8 +21,8 @@ The API can configure actions that the host executes. Therefore:
 
 - **Served only to allowed hosts**: the `Host` header must match the address the
   service listens on (or `localhost:<port>`), otherwise `403`. Protects against
-  DNS rebinding. On ESP32 use the numeric IPv4 address of the interface receiving the request
-  (with optional `:80`); arbitrary DNS names and `localhost` are not accepted.
+  DNS rebinding. On ESP32 use the configured `web.public_origin` hostname/port;
+  without one, the numeric IPv4 address of the receiving interface applies.
 - **Changing requests** (`PUT`, `POST`, `DELETE`) must carry the header
   `X-Deck-Request: 1`, otherwise `403`. A foreign origin cannot set this header
   without a CORS preflight, and the service does not answer preflights.
@@ -41,6 +41,12 @@ The API can configure actions that the host executes. Therefore:
   and the role (`required_role`, default `deck-admin`, configurable or empty), then creates the same session and
   redirects to `/`; a failure redirects to `/?auth_error=<denied|expired|forbidden|token|provider>`. Logout ends
   only the deck session, the Keycloak SSO session stays. Needs the `oidc` extra (`pip install "d200-deck[oidc]"`).
+- **Login (ESP32, optional)**: `auth.local.json` embeds the local account/verifier and optional `auth.oidc`
+  settings. HTTP/HTTPS and the 48-hour default session lifetime are configurable. It implements the same
+  `/auth/session`, `/auth/login`, `/auth/logout`, `/auth/oidc/start` and `/auth/oidc/callback` contract;
+  the Keycloak client role `deck-admin` is mandatory in the signed ID token. An additional opaque `identity`
+  field in the session response identifies issuer/subject independently of the display name. Callback failures
+  may also report `clock` or `capacity`. See [esp32-oidc.md](esp32-oidc.md) for provisioning, limits and tests.
 
 ## Endpoints
 

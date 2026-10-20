@@ -186,6 +186,11 @@ static esp_err_t api_missing(httpd_req_t *req)
 
 esp_err_t web_start(void)
 {
+    if (WEB_AUTH_ENABLED) {
+        /* SDK debug output includes raw headers/URIs (cookies and callback codes). */
+        static const char *const protocol_logs[] = {"httpd_parse", "httpd_uri", "httpd_txrx", "HTTP_CLIENT", "HTTP_HEADER", "HTTP_AUTH"};
+        for (unsigned i = 0; i < sizeof protocol_logs / sizeof protocol_logs[0]; i++) esp_log_level_set(protocol_logs[i], ESP_LOG_ERROR);
+    }
     esp_err_t err = web_auth_init();
     if (err != ESP_OK) return err;
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
@@ -195,6 +200,7 @@ esp_err_t web_start(void)
     cfg.lru_purge_enable = true;
     cfg.stack_size = 8192;
     cfg.max_req_hdr_len = 4096;
+    cfg.max_uri_len = 2048;
     httpd_handle_t server;
     err = web_transport_start(&cfg, &server);
     if (err != ESP_OK) return err;

@@ -38,7 +38,8 @@ not executed/read. Version-1 configurations are converted to version 2 on load/i
 
 Local password authentication and HTTP/HTTPS are configured at build time in the ignored `auth.local.json`.
 Session duration defaults to 48 hours and is configurable. See [web-auth.md](../docs/web-auth.md) for setup,
-verifier generation, endpoints and tests; native Keycloak OIDC is planned in [web-auth-plan.md](../docs/web-auth-plan.md).
+verifier generation, endpoints and tests. Native Keycloak OIDC runs alongside the local account; setup and
+required `deck-admin` client-role mapper: [esp32-oidc.md](../docs/esp32-oidc.md).
 Without an auth configuration the existing HTTP mode remains unauthenticated and logs `authentication DISABLED`.
 With `public_origin` configured, use that exact address; otherwise use the numeric IPv4 address. Host checks
 prevent DNS rebinding, and changing requests also require `X-Deck-Request: 1` and a matching Origin when supplied.
