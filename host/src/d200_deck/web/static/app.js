@@ -1,6 +1,7 @@
 // D200 // Configurator: state, pages, autosave, edit/test modes, live events.
 
 import { api } from "./api.js";
+import { AuthFlow, LoginView } from "./auth.js";
 import { AltMedia } from "./altmedia.js";
 import { Autosave } from "./autosave.js";
 import { fontsReady, iconFromFile, rawToCanvas } from "./compose.js";
@@ -297,39 +298,69 @@ document.querySelectorAll("#mode button").forEach((b) => b.addEventListener("cli
 setInterval(() => state.info?.keys.length && refreshDynamic(state.page).catch(fail), 15000); // {time}, clock
 bindIO({ flush: () => autosave.flush(), config: () => state.config, setConfig: (c) => (state.config = c), reload, toast });
 
-loadAll()
-  .then(() =>
-    api.events({
-      key: ({ index, pressed }) => deck.setPressed(index, pressed),
-      action: ({ detail }) => deck.addLog(detail, detail.startsWith("!")),
-      page: ({ page }) => page !== state.page && openPage(page, false).catch(fail),
-      values: (values) => {
-        state.values = values;
-        variables.render();
-        refreshDynamic(state.page).catch(fail);
-      },
-      mqtt: (s) => mqtt.apply(s),
-      brightness: (b) => {
-        state.brightness = b;
-        refreshStatus();
-      },
-      status: ({ connected }) => {
-        const reconnected = connected && !state.connected;
-        state.connected = connected;
-        refreshStatus();
-        if (reconnected) reload();
-      },
-      offline: () => {
-        state.offline = true;
-        refreshStatus();
-      },
-      // After a break the host may have restarted: resync instead of trusting old state.
-      online: () => {
-        const wasOffline = state.offline;
-        state.offline = false;
-        refreshStatus();
-        if (wasOffline) reload();
-      },
-    }),
-  )
+let stream = null;
+
+function connect() {
+  stream?.close();
+  stream = api.events({
+    key: ({ index, pressed }) => deck.setPressed(index, pressed),
+    action: ({ detail }) => deck.addLog(detail, detail.startsWith("!")),
+    page: ({ page }) => page !== state.page && openPage(page, false).catch(fail),
+    values: (values) => {
+      state.values = values;
+      variables.render();
+      refreshDynamic(state.page).catch(fail);
+    },
+    mqtt: (s) => mqtt.apply(s),
+    brightness: (b) => {
+      state.brightness = b;
+      refreshStatus();
+    },
+    status: ({ connected }) => {
+      const reconnected = connected && !state.connected;
+      state.connected = connected;
+      refreshStatus();
+      if (reconnected) reload();
+    },
+    offline: () => {
+      state.offline = true;
+      refreshStatus();
+      // A stream refused with 401 looks like any other break: ask whether the login ended.
+      auth.verify().then((lost) => lost && relogin()).catch((e) => console.debug("session check failed:", e));
+    },
+    // After a break the host may have restarted: resync instead of trusting old state.
+    online: () => {
+      const wasOffline = state.offline;
+      state.offline = false;
+      refreshStatus();
+      if (wasOffline) reload();
+    },
+  });
+}
+
+const auth = new AuthFlow({
+  view: new LoginView(),
+  autosave,
+  stop: () => stream?.close(),
+});
+
+// The login ended: log in again; the same user keeps unsaved edits (stored by the reload), another user does not.
+let relogging = null;
+
+function relogin() {
+  relogging ??= auth
+    .recover()
+    .then((same) => (same ? reload() : loadAll()))
+    .then(connect)
+    .finally(() => (relogging = null));
+  return relogging;
+}
+
+auth.view.onLogout = () => auth.logout().then(relogin).catch(fail);
+
+auth
+  .init()
+  .then(() => api.onAuthLost(() => relogin().catch(fail)))
+  .then(loadAll)
+  .then(connect)
   .catch((e) => toast(`Cannot reach the host: ${e.message}`, true));

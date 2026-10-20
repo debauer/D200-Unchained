@@ -3,8 +3,16 @@
 const MUTATE = { "X-Deck-Request": "1" };
 const keyPath = (page, i) => `/api/pages/${encodeURIComponent(page)}/keys/${i}`;
 
-async function check(res) {
+// The host wants a login (401): thrown for the caller and reported once to the handler of onAuthLost().
+export class AuthRequired extends Error {}
+let authLost = () => {};
+
+async function check(res, loginRequest = false) {
   if (res.ok) return res;
+  if (res.status === 401 && !loginRequest) {
+    authLost();
+    throw new AuthRequired("login required");
+  }
   let message = `${res.status} ${res.statusText}`;
   try {
     message = (await res.json()).error || message;
@@ -31,6 +39,16 @@ function send(method, path, body, type) {
 }
 
 export const api = {
+  onAuthLost: (handler) => (authLost = handler),
+  // Authentication capabilities; hosts without /auth/session are open.
+  async authSession() {
+    const res = await fetch("/auth/session");
+    if (res.status === 404) return { required: false, authenticated: true, username: null, methods: [] };
+    return (await check(res, true)).json();
+  },
+  login: async (username, password) =>
+    (await check(await fetch("/auth/login", { method: "POST", headers: { ...MUTATE, "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) }), true)).json(),
+  logout: () => send("POST", "/auth/logout"),
   info: () => json("/api/info"),
   config: () => json("/api/config"),
   putConfig: (cfg) => send("PUT", "/api/config", JSON.stringify(cfg), "application/json"),

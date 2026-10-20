@@ -1,6 +1,6 @@
 // Debounced, serialised saving: config first, then icon and image of each edited key.
 
-import { api } from "./api.js";
+import { AuthRequired, api } from "./api.js";
 
 const SAVE_DELAY_MS = 500;
 
@@ -31,6 +31,28 @@ export class Autosave {
     this.configDirty = false;
     this.running = null;
     this.timer = null;
+    this.paused = false; // no login: edits stay pending
+  }
+
+  // Stop saving (the session ended); edits are kept for resume() or dropped by discard().
+  pause() {
+    this.paused = true;
+    clearTimeout(this.timer);
+    if (this.configDirty || this.dirty.size) this.status("unsaved: login required", true);
+  }
+
+  resume() {
+    this.paused = false;
+    if (this.configDirty || this.dirty.size) this.touchConfig();
+  }
+
+  // Drop pending edits, e.g. when another user logged in.
+  discard() {
+    this.paused = false;
+    clearTimeout(this.timer);
+    this.dirty.clear();
+    this.configDirty = false;
+    this.status("");
   }
 
   // Key `i` of `page` changed (config and images).
@@ -42,8 +64,9 @@ export class Autosave {
   // Only the config changed (page names, pages added or removed).
   touchConfig() {
     this.configDirty = true;
-    this.status("unsaved");
     clearTimeout(this.timer);
+    if (this.paused) return this.status("unsaved: login required", true);
+    this.status("unsaved");
     // Errors are shown through status(); log them for the console as well.
     this.timer = setTimeout(() => this.flush().catch((e) => console.warn("autosave failed:", e)), SAVE_DELAY_MS);
   }
@@ -51,6 +74,7 @@ export class Autosave {
   // Save everything changed so far; resolves once it is stored (rejects on error).
   async flush() {
     clearTimeout(this.timer);
+    if (this.paused) throw new AuthRequired("login required");
     // One save at a time; a failed earlier save was already reported by saveDirty().
     while (this.running) await this.running.catch((e) => console.debug("previous save failed:", e));
     if (!this.configDirty && !this.dirty.size) return;
@@ -77,7 +101,7 @@ export class Autosave {
     } catch (e) {
       keys.forEach((id) => this.dirty.add(id));
       this.configDirty = true;
-      this.status(`not saved: ${e.message}`, true);
+      this.status(e instanceof AuthRequired ? "unsaved: login required" : `not saved: ${e.message}`, true);
       throw e;
     }
   }

@@ -33,6 +33,10 @@
         Export JSON
       </button>
     </div>
+    <div class="session">
+      <span id="whoami" class="whoami"></span>
+      <button type="button" id="logout" class="btn ghost small" hidden>Logout</button>
+    </div>
   </header>
 
   <main class="layout">
@@ -246,6 +250,20 @@
       <button type="button" class="reset" id="reset">&times; Reset key</button>
     </aside>
   </main>
+
+  <div id="login" class="login" hidden>
+    <form id="login-form" class="login-box" autocomplete="on">
+      <div class="title">Login</div>
+      <label class="field">Username
+        <input id="login-user" name="username" autocomplete="username" maxlength="64" required>
+      </label>
+      <label class="field">Password
+        <input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="128" required>
+      </label>
+      <div id="login-error" class="login-error" role="alert"></div>
+      <button type="submit" class="btn primary cut">Sign in</button>
+    </form>
+  </div>
 
   <div id="toast" class="toast" role="status" hidden></div>
 </body>
