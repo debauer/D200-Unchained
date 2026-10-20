@@ -41,6 +41,37 @@ TLS ends at nginx; the web login (docs/web-auth-plan.md) is the host's own. Neve
    ```
 7. `docker compose up -d`, open `https://<domain>/`.
 
+## Keycloak login (optional, next to the password)
+
+Add an `oidc` object to `auth.json` (in the `config` volume, mode 0600) and restart `deck`:
+
+```json
+"oidc": {
+  "issuer": "https://id.example.org/realms/home",
+  "client_id": "deck",
+  "required_role": "deck-admin"
+}
+```
+
+- Keycloak client: public (no secret), Standard Flow on, PKCE `S256`, valid redirect URI exactly
+  `https://<domain>/auth/oidc/callback`.
+- `required_role` (default `deck-admin`) must be a role of that client and appear in the **ID token**: add the
+  "User Client Role" mapper with *Add to ID token* (the test realm shows how). Set `"required_role": ""` to let every
+  user of the realm in. `role_claim` (default `resource_access.{client_id}.roles`) points elsewhere, e.g. `"groups"`.
+- Optional: `username_claim` (`preferred_username`), `scopes` (`openid`), `ca_file` (PEM bundle for a private CA).
+- `public_origin` is required; the callback URL is built from it. Without a local password in `auth.json` only the
+  Keycloak button is offered.
+
+## Test stack with Keycloak and a test realm
+
+`test/` holds a complete, USB-free stack: deck behind nginx with a throw-away CA (instead of certbot) and a Keycloak
+that imports the realm `deck-test` (client `deck`; `alice` has `deck-admin`, `bob` has not). `./test/run.sh` builds it,
+runs `test/e2e.py` (local login, Keycloak login with and without the role, API refused without a session) and tears
+it down. `KEEP=1 ./test/run.sh` leaves it running: UI `https://deck.localtest.me:8443/` (accept the test CA from
+`test/out/certs/ca.pem` or the browser warning), local login `admin` / `local-test-password`, Keycloak users
+`alice` / `alice-test-password` and `bob` / `bob-test-password`, Keycloak admin console on the same host name
+`https://keycloak.localtest.me:8443/` (`admin` / `admin`). `*.localtest.me` resolves to 127.0.0.1 in public DNS.
+
 ## Operation
 
 - Logs: `docker compose logs -f deck`. D200 visible? `docker compose exec deck adb devices`.

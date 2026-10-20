@@ -1,0 +1,79 @@
+# End-to-end test of the web login: deck behind nginx (TLS) with a Keycloak and a test realm.
+# No USB and no Let's Encrypt: a throw-away CA stands in for certbot, deck runs without adb.
+# Run ./run.sh (or see README.md).
+name: d200-deck-test
+
+services:
+  certs:
+    image: alpine:3.20
+    entrypoint: ["/bin/sh", "/gen-certs.sh"]
+    volumes:
+      - ./gen-certs.sh:/gen-certs.sh:ro
+      - ./out/certs:/certs
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: https://keycloak.localtest.me:8443
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./realm:/opt/keycloak/data/import:ro
+    healthcheck:
+      # no curl in the image: speak HTTP to the management port by hand
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.0\r\n\r\n' >&3 &&
+          grep -q '"status": "UP"' <&3
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 20s
+    networks: [internal]
+
+  deck:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+      args:
+        EXTRAS: "[oidc]"
+    # auth.json is copied so it gets mode 0600, which the host insists on
+    command:
+      - /bin/sh
+      - -c
+      - install -m 600 /test/auth.json /config/auth.json && exec deck serve --web 0.0.0.0:7280 --no-adb
+    volumes:
+      - ./auth.json:/test/auth.json:ro
+      - ./out/certs/ca.pem:/certs/ca.pem:ro
+    extra_hosts:
+      - "keycloak.localtest.me:172.29.0.10"  # the issuer URL must work inside as outside: through the proxy
+    depends_on:
+      certs: { condition: service_completed_successfully }
+    networks: [internal]
+
+  proxy:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./out/certs:/certs:ro
+    ports:
+      - "8443:8443"
+    depends_on:
+      certs: { condition: service_completed_successfully }
+      deck: { condition: service_started }
+      keycloak: { condition: service_started }
+    networks:
+      internal:
+        ipv4_address: 172.29.0.10
+
+networks:
+  internal:
+    ipam:
+      config:
+        - subnet: 172.29.0.0/24

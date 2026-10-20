@@ -35,7 +35,12 @@ The API can configure actions that the host executes. Therefore:
   (`__Host-deck_session` and `Secure` when `public_origin` is `https://`), HttpOnly, SameSite=Lax, fixed lifetime
   (default 48 h, not renewed). Sessions live in RAM. Changing requests with an `Origin` header must match
   `public_origin` (default `http://<Host>`). Behind a reverse proxy set `public_origin` and `trusted_proxies`
-  (only then `X-Forwarded-For` is used for throttling). OIDC is not implemented on the Linux host yet.
+  (only then `X-Forwarded-For` is used for throttling). With an `oidc` section in `auth.json` the host also offers Keycloak: `POST /auth/oidc/start` returns
+  `{"redirect"}` (Authorization Code with PKCE S256, state and nonce, one transaction per browser in a short-lived
+  cookie), `GET /auth/oidc/callback` verifies the RS256 ID token (signature, issuer, audience, azp, exp, iat, nonce)
+  and the role (`required_role`, default `deck-admin`, configurable or empty), then creates the same session and
+  redirects to `/`; a failure redirects to `/?auth_error=<denied|expired|forbidden|token|provider>`. Logout ends
+  only the deck session, the Keycloak SSO session stays. Needs the `oidc` extra (`pip install "d200-deck[oidc]"`).
 
 ## Endpoints
 

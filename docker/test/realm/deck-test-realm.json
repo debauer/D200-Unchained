@@ -1,0 +1,65 @@
+{
+  "realm": "deck-test",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "roles": {
+    "client": {
+      "deck": [{ "name": "deck-admin", "description": "May configure the deck" }]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "deck",
+      "name": "D200 deck",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "redirectUris": ["https://deck.localtest.me:8443/auth/oidc/callback"],
+      "webOrigins": ["https://deck.localtest.me:8443"],
+      "attributes": { "pkce.code.challenge.method": "S256" },
+      "protocolMappers": [
+        {
+          "name": "deck client roles in the ID token",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "usermodel.clientRoleMapping.clientId": "deck",
+            "claim.name": "resource_access.${client_id}.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "alice@deck.test",
+      "firstName": "Alice",
+      "lastName": "Admin",
+      "credentials": [{ "type": "password", "value": "alice-test-password", "temporary": false }],
+      "clientRoles": { "deck": ["deck-admin"] }
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "bob@deck.test",
+      "firstName": "Bob",
+      "lastName": "Viewer",
+      "credentials": [{ "type": "password", "value": "bob-test-password", "temporary": false }]
+    }
+  ]
+}

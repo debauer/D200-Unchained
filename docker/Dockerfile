@@ -1,7 +1,7 @@
 # Host service (`deck serve`) with adb for the D200. Build context: the repository root (public/).
 FROM python:3.12-slim
 
-ARG EXTRAS=""
+ARG EXTRAS="[oidc]"
 RUN apt-get update \
     && apt-get install -y --no-install-recommends android-tools-adb \
     && rm -rf /var/lib/apt/lists/*
