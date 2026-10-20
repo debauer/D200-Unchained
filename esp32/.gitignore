@@ -13,3 +13,6 @@ uv-*.lock
 logs/
 wifi.local
 main/wifi_local.h
+auth.local.json
+*.local.pem
+main/web_local.h

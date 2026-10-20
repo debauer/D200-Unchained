@@ -104,12 +104,29 @@ all features below are already available.
 
 ## Implementation progress
 
-- [ ] Build configuration, verifier helper and configurable HTTP/HTTPS.
-- [ ] Sessions, local login, route protection and SSE revocation.
-- [ ] Shared login/logout UI and authentication-loss handling.
+- [x] Build configuration, verifier helper and configurable HTTP/HTTPS.
+- [x] Sessions, local login, route protection and SSE revocation.
+- [x] Shared login/logout UI and authentication-loss handling.
 - [ ] Keycloak OIDC and authorization policy.
 - [ ] Integration/hardware verification and final documentation.
 
 Commit each verified implementation stage. Update this progress section with
 the actual tests and remaining limitations; do not mark unimplemented OIDC
 as available.
+
+### Backend stage, 2026-10-20
+
+Implemented local login, configurable 48-hour sessions and HTTP/HTTPS. See
+[web-auth.md](web-auth.md) for configuration and the API. Verified with five
+Python configuration tests, native core/Origin regression tests and real
+mbedTLS login/logout/cookie API tests in both cookie modes. Authenticated HTTP
+and HTTPS firmware profiles compile. Hardware verification remains open.
+The browser login and Keycloak OIDC are not included in this backend stage.
+
+The shared browser login was subsequently added in parallel in commit
+`e9881dd` (Linux authentication backend: `b35698a`). Both backends use the
+same `/auth/session`, `/auth/login`, `/auth/logout` contract and cookie
+policies. All 30 JavaScript tests pass, including missing-session recovery,
+pending-edit retention for the same user and logout behavior. Keycloak OIDC
+is still unimplemented; its role policy and certificate provisioning remain
+open as described above.

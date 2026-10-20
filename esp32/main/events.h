@@ -1,4 +1,5 @@
 #pragma once
+#include <stdint.h>
 
 #include "esp_err.h"
 #include "esp_http_server.h"
@@ -16,3 +17,5 @@ void events_init(void);
 
 /* Keepalive comment every 15 s; call once. */
 void events_start(void);
+/* Close streams belonging to a revoked session (called without the session lock held). */
+void events_revoke(uint64_t ticket);

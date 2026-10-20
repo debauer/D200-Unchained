@@ -36,11 +36,15 @@ not executed/read. Version-1 configurations are converted to version 2 on load/i
 
 ### Security
 
-There is no authentication: anyone who can reach the ESP32 on your network can configure it. Open the UI by its
-numeric IPv4 address (`http://<ip>/`); other Host headers are rejected to prevent DNS rebinding. Changing API
-requests also require `X-Deck-Request: 1`. WLAN credentials are embedded in the firmware and stored by ESP-IDF in
-NVS, and the MQTT password is stored in plaintext in `storage`. Flash is not encrypted. The API/export never
-returns the MQTT password. Keep the device on a trusted network.
+Local password authentication and HTTP/HTTPS are configured at build time in the ignored `auth.local.json`.
+Session duration defaults to 48 hours and is configurable. See [web-auth.md](../docs/web-auth.md) for setup,
+verifier generation, endpoints and tests; native Keycloak OIDC is planned in [web-auth-plan.md](../docs/web-auth-plan.md).
+Without an auth configuration the existing HTTP mode remains unauthenticated and logs `authentication DISABLED`.
+With `public_origin` configured, use that exact address; otherwise use the numeric IPv4 address. Host checks
+prevent DNS rebinding, and changing requests also require `X-Deck-Request: 1` and a matching Origin when supplied.
+HTTP is supported explicitly and sends credentials/cookies unencrypted; HTTPS requires your certificate/key.
+WLAN credentials are embedded in the firmware and stored by ESP-IDF in NVS; the MQTT password is stored in
+plaintext in `storage`. Flash is not encrypted. The API/export never returns the MQTT password or auth verifier.
 
 Key images go to `deckd` run-length coded (protocol 5, `format 2`; flat areas and text shrink by a factor of 10 to 30,
 photos stay as they are), and the USB transfers are reused instead of allocated per block. The menu item

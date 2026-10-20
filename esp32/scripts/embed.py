@@ -16,6 +16,18 @@ from pathlib import Path
 Import("env")  # noqa: F821  (provided by PlatformIO)
 
 project = Path(env["PROJECT_DIR"])  # noqa: F821
+sys.path.insert(0, str(project / "scripts"))
+import auth_config
+
+try:
+    web_config = auth_config.load(project, os.environ.get("DECK_AUTH_CONFIG"))
+except (OSError, ValueError) as error:
+    sys.stderr.write(f"invalid auth.local.json: {error}\n")
+    env.Exit(1)  # noqa: F821
+web_header = project / "main/web_local.h"
+web_text = auth_config.header(web_config)
+if not web_header.exists() or web_header.read_text() != web_text:
+    web_header.write_text(web_text)
 data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
 fonts_dir = project.parent / "host/src/d200_deck/web/static/fonts"
 
@@ -56,9 +68,10 @@ def convert_font(weight):
 
 
 def section(name, path):
+    body = f'.incbin "{path.resolve()}"' if path is not None else ""
     return f""".global {name}_start
 {name}_start:
-.incbin "{path.resolve()}"
+{body}
 .global {name}_end
 {name}_end:
 .byte 0
@@ -68,7 +81,8 @@ def section(name, path):
 deckd = find_deckd()
 blobs = ".section .rodata.blobs,\"a\",@progbits\n.balign 4\n" + "".join(
     section(name, path)
-    for name, path in (("deckd", deckd), ("font_bold", convert_font(700)), ("font_medium", convert_font(500)))
+    for name, path in (("deckd", deckd), ("font_bold", convert_font(700)), ("font_medium", convert_font(500)),
+                       ("web_cert", web_config["cert"]), ("web_key", web_config["key"]))
 )
 target = project / "main/blobs.S"
 if not target.exists() or target.read_text() != blobs:

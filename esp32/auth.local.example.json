@@ -1,0 +1,12 @@
+{
+  "web": {
+    "transport": "http",
+    "public_origin": "http://deck.home.example"
+  },
+  "auth": {
+    "enabled": true,
+    "username": "admin",
+    "password_hash": "REPLACE_WITH_OUTPUT_OF_scripts/auth_password.py",
+    "session_ttl_seconds": 172800
+  }
+}

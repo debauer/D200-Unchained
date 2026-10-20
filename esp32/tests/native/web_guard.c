@@ -7,11 +7,17 @@
 #include "web.h"
 
 static int denied, dispatched;
+bool web_auth_guard(httpd_req_t *req) { (void)req; return true; }
+size_t httpd_req_get_hdr_value_len(httpd_req_t *req, const char *name)
+{
+    assert(!strcmp(name, "Origin"));
+    return req->origin ? strlen(req->origin) : 0;
+}
 esp_err_t httpd_req_get_hdr_value_str(httpd_req_t *req, const char *name, char *out, size_t size)
 {
-    assert(!strcmp(name, "Host"));
-    if (!req->host || strlen(req->host) >= size) return ESP_FAIL;
-    strcpy(out, req->host);
+    const char *value = !strcmp(name, "Host") ? req->host : req->origin;
+    if (!value || strlen(value) >= size) return ESP_FAIL;
+    strcpy(out, value);
     return ESP_OK;
 }
 int httpd_req_to_sockfd(httpd_req_t *req) { return req->fd; }
@@ -52,6 +58,15 @@ int main(void)
         assert(web_guarded_request(&req) == ESP_OK);
     }
     assert(dispatched == 1 && denied == 5);
+    req.host = host;
+    char origin[96];
+    snprintf(origin, sizeof origin, "http://%s", host);
+    req.origin = origin;
+    assert(web_origin_allowed(&req));
+    req.origin = "http://evil.example";
+    assert(!web_origin_allowed(&req));
+    req.method = HTTP_POST;
+    assert(web_guarded_request(&req) == ESP_OK && dispatched == 1 && denied == 6);
     close(fd);
 
     req = (httpd_req_t){.body = "{\"page\":\"lights\"}", .content_len = 17, .fail_after = -1};

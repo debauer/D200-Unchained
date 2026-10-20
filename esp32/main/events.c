@@ -7,6 +7,10 @@
 
 #include "device.h"
 #include "mqtt.h"
+#include "web_transport.h"
+#include "web_settings.h"
+#include "web_auth.h"
+#include "web.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -16,19 +20,15 @@
 #include "lwip/sockets.h"
 
 static const char *TAG = "events";
-#define MAX_CLIENTS 4
+#define MAX_CLIENTS (WEB_TLS ? 2 : 4)
 #define KEEPALIVE_US (15 * 1000 * 1000)
 
 static httpd_req_t *s_clients[MAX_CLIENTS];
+static uint64_t s_tickets[MAX_CLIENTS];
 static SemaphoreHandle_t s_lock;
 static QueueHandle_t s_pending;
 static portMUX_TYPE s_overflow_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool s_overflow;
-
-static int send_nonblocking(httpd_handle_t server, int fd, const char *buf, size_t size, int flags)
-{
-    return send(fd, buf, size, flags | MSG_DONTWAIT);
-}
 
 static esp_err_t send_to(httpd_req_t *req, const char *text)
 {
@@ -50,8 +50,16 @@ static void send_all(const char *text)
 {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (s_clients[i] && send_to(s_clients[i], text) != ESP_OK) drop(i);
+        if (s_clients[i] && (!web_auth_ticket_valid(s_tickets[i]) || send_to(s_clients[i], text) != ESP_OK)) drop(i);
     }
+    xSemaphoreGive(s_lock);
+}
+
+void events_revoke(uint64_t ticket)
+{
+    if (!ticket || ticket == AUTH_OPEN_TICKET) return;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    for (int i = 0; i < MAX_CLIENTS; i++) if (s_clients[i] && s_tickets[i] == ticket) drop(i);
     xSemaphoreGive(s_lock);
 }
 
@@ -114,12 +122,14 @@ static char *state_json(const char *name)
 
 esp_err_t events_handler(httpd_req_t *req)
 {
+    uint64_t ticket = web_auth_ticket(req);
+    if (!ticket) return web_json_error(req, "401 Unauthorized", "authentication required");
     httpd_req_t *copy;
     esp_err_t err = httpd_req_async_handler_begin(req, &copy);
     if (err != ESP_OK) return err;
     httpd_resp_set_type(copy, "text/event-stream");
-    httpd_resp_set_hdr(copy, "Cache-Control", "no-cache");
-    err = httpd_sess_set_send_override(copy->handle, httpd_req_to_sockfd(copy), send_nonblocking);
+    httpd_resp_set_hdr(copy, "Cache-Control", "no-store");
+    err = web_stream_prepare(copy);
     if (err != ESP_OK) {
         httpd_req_async_handler_complete(copy);
         return err;
@@ -137,6 +147,7 @@ esp_err_t events_handler(httpd_req_t *req)
         return ESP_OK;
     }
     s_clients[slot] = copy;
+    s_tickets[slot] = ticket;
     /* the state right after connecting: status, brightness, page, values, mqtt */
     static const char *const initial[] = {"status", "brightness", "page", "values", "mqtt"};
     for (size_t i = 0; i < sizeof initial / sizeof initial[0]; i++) {
@@ -144,7 +155,7 @@ esp_err_t events_handler(httpd_req_t *req)
         size_t size = json ? strlen(json) + 40 : 0;
         char *text = json ? malloc(size) : NULL;
         if (text) snprintf(text, size, "event: %s\ndata: %s\n\n", initial[i], json);
-        bool failed = !text || send_to(copy, text) != ESP_OK;
+        bool failed = !text || !web_auth_ticket_valid(ticket) || send_to(copy, text) != ESP_OK;
         free(text);
         free(json);
         if (failed) {

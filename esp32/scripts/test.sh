@@ -15,7 +15,9 @@ gcc "${flags[@]}" -I tests/native/stubs -o "$out/protocol" tests/native/protocol
 gcc "${flags[@]}" -I tests/native/stubs -DCONFIG_D200_DEBUG -o "$out/adb_transport" tests/native/adb_transport.c main/adb.c
 "$out/protocol"
 "$out/adb_transport"
-gcc "${flags[@]}" -I tests/native/stubs -o "$out/web_guard" tests/native/web_guard.c main/web_guard.c
+gcc "${flags[@]}" -I tests/native/stubs -DWEB_CONFIG_HEADER='"web_test_config.h"' -o "$out/web_guard" tests/native/web_guard.c main/web_guard.c
+gcc "${flags[@]}" -o "$out/auth_core" tests/native/auth_core.c main/auth_core.c
+"$out/auth_core"
 gcc "${flags[@]}" -I tests/native/stubs -o "$out/device_json" tests/native/device_json.c main/device_json.c "$cjson/cJSON.c"
 "$out/web_guard"
 "$out/device_json"

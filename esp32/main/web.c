@@ -1,4 +1,7 @@
 #include "web.h"
+#include "web_transport.h"
+#include "web_auth.h"
+#include "web_settings.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,11 +10,9 @@
 
 #include "cJSON.h"
 #include "config.h"
-#include "config_validate.h"
 #include "device.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
-#include "draw.h"
 #include "events.h"
 #include "keyfiles.h"
 #include "logbuf.h"
@@ -19,7 +20,6 @@
 
 static const char *TAG = "web";
 #define WWW "/www"
-#define MAX_CONFIG 65536
 #define LOG_CHUNK 6144
 #define INFO_MAX 6144
 
@@ -106,73 +106,6 @@ static esp_err_t api_info(httpd_req_t *req)
     return err;
 }
 
-static esp_err_t api_config_get(httpd_req_t *req)
-{
-    cJSON *config = config_parse();
-    char *text = config ? cJSON_PrintUnformatted(config) : NULL;
-    cJSON_Delete(config);
-    if (!text) return web_json_error(req, "500 Internal Server Error", "cannot load the config");
-    httpd_resp_set_type(req, "application/json");
-    esp_err_t err = httpd_resp_sendstr(req, text);
-    free(text);
-    return err;
-}
-
-static esp_err_t api_config_put(httpd_req_t *req)
-{
-    REQUIRE_HEADER(req);
-    if (req->content_len == 0 || req->content_len > MAX_CONFIG) return web_json_error(req, "413 Payload Too Large", "config too large");
-    char *body = malloc(req->content_len + 1);
-    if (!body) return web_json_error(req, "500 Internal Server Error", "out of memory");
-    size_t got = 0;
-    while (got < req->content_len) {
-        int n = httpd_req_recv(req, body + got, req->content_len - got);
-        if (n <= 0) {
-            free(body);
-            return ESP_FAIL;
-        }
-        got += n;
-    }
-    body[got] = 0;
-    const char *problem;
-    cJSON *saved = config_validate(body, &problem);
-    free(body);
-    if (!saved) {
-        return web_json_error(req, "400 Bad Request", problem);
-    }
-    cJSON *before = config_parse(); /* to see which keys change */
-    body = cJSON_PrintUnformatted(saved);
-    if (body && strlen(body) > MAX_CONFIG) {
-        cJSON_Delete(before);
-        cJSON_Delete(saved);
-        free(body);
-        return web_json_error(req, "413 Payload Too Large", "normalized config too large");
-    }
-    if (!body || !config_store(body, strlen(body))) {
-        cJSON_Delete(before);
-        cJSON_Delete(saved);
-        ESP_LOGE(TAG, "cannot store the config");
-        free(body);
-        return web_json_error(req, "500 Internal Server Error", "cannot store the config");
-    }
-    if (saved) {
-        config_purge_images(saved); /* images of deleted pages */
-        mqtt_configure(saved);      /* topics of the variables */
-        device_state_t state;
-        device_snapshot(&state);
-        const cJSON *old_level = cJSON_GetObjectItem(before, "brightness"), *level = cJSON_GetObjectItem(saved, "brightness");
-        if (!cJSON_IsNumber(old_level) || old_level->valueint != level->valueint) device_set_brightness(level->valueint);
-        if (!config_find_page(saved, state.page)) device_set_page("root");
-        draw_request_changes(before, saved, state.page); /* only what looks different */
-    }
-    cJSON_Delete(saved);
-    cJSON_Delete(before);
-    httpd_resp_set_type(req, "application/json");
-    esp_err_t err = httpd_resp_sendstr(req, body);
-    free(body);
-    return err;
-}
-
 /* POST /api/page {"page": "<id>"}: show a page on the device. */
 static esp_err_t api_page(httpd_req_t *req)
 {
@@ -253,22 +186,27 @@ static esp_err_t api_missing(httpd_req_t *req)
 
 esp_err_t web_start(void)
 {
+    esp_err_t err = web_auth_init();
+    if (err != ESP_OK) return err;
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn = httpd_uri_match_wildcard;
     cfg.max_uri_handlers = 28;
     cfg.max_open_sockets = 10; /* event streams hold their socket */
     cfg.lru_purge_enable = true;
     cfg.stack_size = 8192;
+    cfg.max_req_hdr_len = 4096;
     httpd_handle_t server;
-    esp_err_t err = httpd_start(&server, &cfg);
+    err = web_transport_start(&cfg, &server);
     if (err != ESP_OK) return err;
     events_start();
     keyfiles_init();
     static const httpd_uri_t routes[] = {
         {.uri = "/api/info", .method = HTTP_GET, .handler = api_info},
         {.uri = "/api/events", .method = HTTP_GET, .handler = events_handler},
-        {.uri = "/api/config", .method = HTTP_GET, .handler = api_config_get},
-        {.uri = "/api/config", .method = HTTP_PUT, .handler = api_config_put},
+        {.uri = "/api/config", .method = HTTP_GET, .handler = web_config_get},
+        {.uri = "/api/config", .method = HTTP_PUT, .handler = web_config_put},
+        {.uri = "/auth/*", .method = HTTP_GET, .handler = web_auth_handler},
+        {.uri = "/auth/*", .method = HTTP_POST, .handler = web_auth_handler},
         {.uri = "/api/log", .method = HTTP_GET, .handler = api_log},
         {.uri = "/api/page", .method = HTTP_POST, .handler = api_page},
         {.uri = "/api/keys/*", .method = HTTP_POST, .handler = keyfiles_handler},
@@ -293,6 +231,7 @@ esp_err_t web_start(void)
         guarded.user_ctx = (void *)&routes[i];
         ESP_ERROR_CHECK(httpd_register_uri_handler(server, &guarded));
     }
-    ESP_LOGI(TAG, "http server on port %d", cfg.server_port);
+    ESP_LOGI(TAG, "%s server on port %d; authentication %s", WEB_TLS ? "https" : "http", WEB_PORT,
+             WEB_AUTH_ENABLED ? "enabled" : "DISABLED");
     return ESP_OK;
 }
