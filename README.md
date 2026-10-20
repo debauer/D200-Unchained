@@ -15,10 +15,9 @@ Linux user who wants to decide for himself what his devices do. There are projec
 usable with Home Assistant or let it trigger events on the system, but none of them were
 comfortable enough, and they always lacked features I wanted. So I wrote my own.
 
-Besides this Linux software I am developing a standalone version around an ESP32-S3, which can
-also cover more home automation use cases. It follows the same principle: the D200 itself is not
-modified, the ESP32 loads everything onto the device via ADB. That version is work in progress
-and not part of this repository yet.
+Besides the Linux software there is a standalone variant around an ESP32-S3, which can also cover
+more home automation use cases. It follows the same principle: the D200 itself is not modified, the
+ESP32 loads everything onto the device via ADB. See [Two variants](#two-variants).
 
 ## Features
 
@@ -42,6 +41,31 @@ and not part of this repository yet.
   login.
 - **Local by default**: the web UI listens on `127.0.0.1` only, because it can configure commands.
 
+## Two variants
+
+The same web configurator and the same on-device `deckd` work with two different hosts. The host
+is the program that stores the configuration, draws the keys and reacts to key presses.
+
+| | Linux host (`host/`) | ESP32-S3 (`esp32/`) |
+|---|---|---|
+| Runs on | your PC (Python, `deck serve`) | an ESP32-S3 (16 MB flash, 8 MB PSRAM) plugged into the D200's USB port |
+| Needs a PC | yes, running while you use the deck | no, standalone; WiFi and power are enough |
+| Connection to the D200 | `adb` over USB | ADB implemented by the firmware (USB host) |
+| Web UI | `http://127.0.0.1:7280/`, local only by default | served by the ESP32 on your WiFi |
+| Shell commands | key actions and variables (`sh -c`) | not available (nothing to run them on) |
+| Live values | shell commands, clock | MQTT variables, clock |
+| MQTT | yes | yes |
+| Images and text | rendered by Python | rendered by the firmware (same font and layout) |
+| Python library | yes ([docs/python-library.md](docs/python-library.md)) | no |
+| Autostart | systemd user unit | boots with the power |
+| Security | no authentication yet, keep it on `127.0.0.1` | no authentication yet, anyone in your WiFi can use the UI; MQTT password is stored unencrypted in flash |
+| Status | usable | work in progress, see `esp32/README.md` |
+
+Pick the Linux host if you want shell commands on key presses or live values from your system.
+Pick the ESP32 if the deck should work without a computer, for example as a home automation panel
+driven by MQTT. Configurations are exchanged as JSON export/import, but features that exist on only
+one side (such as `command` variables) do not work on the other.
+
 ## Preview
 
 The web configurator: edit a key (image, colours, text, action) and test it live.
@@ -56,6 +80,7 @@ The web configurator: edit a key (image, colours, text, action) and test it live
 |---|---|
 | `device/` | Rust crate for the device: `deckd`, `hello`, `calibrate` |
 | `host/` | Python package `d200-deck` with the `deck` command and the web UI |
+| `esp32/` | ESP32-S3 firmware (PlatformIO/ESP-IDF): the standalone variant, see `esp32/README.md` |
 | `docs/` | `python-library.md` (write your own Python programs), `mqtt.md` (MQTT), `protocol.md` (deckd protocol), `web-api.md` (HTTP API), `hardware.md` (display, keys, layout) |
 | `img/` | Screenshots for this README |
 
