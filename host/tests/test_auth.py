@@ -124,19 +124,19 @@ def test_cookie_parsing() -> None:
 
 def test_session_store_expiry_revocation_and_capacity() -> None:
     store = SessionStore(60, capacity=2)
-    first, second = store.create("a"), store.create("b")
+    first, second = store.create("a", "local:a"), store.create("b", "local:b")
     assert first != second
     assert store.lookup(first) is not None
-    store.create("c")  # the oldest makes room
+    store.create("c", "local:c")  # the oldest makes room
     assert store.lookup(first) is None
     assert store.lookup(second) is not None
     store.revoke(second)
     assert store.lookup(second) is None
     assert store.lookup(None) is None
     short = SessionStore(60)
-    token = short.create("a")
+    token = short.create("a", "local:a")
     short.ttl_s = 0
-    expired = short.create("a")
+    expired = short.create("a", "local:a")
     time.sleep(0.01)
     assert short.lookup(token) is not None
     assert short.lookup(expired) is None
@@ -273,3 +273,22 @@ def test_without_auth_nothing_changes(tmp_path: Path) -> None:
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_explicit_missing_auth_file_is_an_error(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="does not exist"):
+        load_settings(tmp_path / "typo.json", must_exist=True)
+
+
+def test_dotted_client_id_is_one_key_in_the_role_path() -> None:
+    from d200_deck.web.auth.oidc import claim_path  # noqa: PLC0415
+
+    claims = {"resource_access": {"deck.home": {"roles": ["deck-admin"]}}}
+    assert claim_path(claims, "resource_access.{client_id}.roles", "deck.home") == ["deck-admin"]
+
+
+def test_sessions_carry_distinct_identities() -> None:
+    store = SessionStore(60)
+    local, oidc = store.create("admin", "local:admin"), store.create("admin", "oidc:https://i#sub")
+    session_local, session_oidc = store.lookup(local), store.lookup(oidc)
+    assert session_local and session_oidc and session_local.identity != session_oidc.identity

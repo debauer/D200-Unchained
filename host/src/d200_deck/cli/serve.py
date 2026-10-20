@@ -17,6 +17,7 @@ from d200_deck import paths
 from d200_deck.errors import ConfigError
 from d200_deck.service.bootstrap import BootstrapSettings, ensure_deckd
 from d200_deck.service.host import HostService, ServiceSettings
+from d200_deck.web.auth.oidc import check_oidc_dependencies
 from d200_deck.web.auth.settings import AuthSettings, load_settings
 from d200_deck.web.server import DeckWebServer, start_web
 
@@ -91,7 +92,8 @@ def serve(  # noqa: PLR0913, PLR0917 - one parameter per CLI option
     log = logging.getLogger(__name__)
     log.info("config %s, images %s", settings.config_path, settings.images_dir)
     try:
-        auth = load_settings(auth_file or paths.auth_file())
+        auth = load_settings(auth_file or paths.auth_file(), must_exist=auth_file is not None)
+        check_oidc_dependencies(auth)
     except ConfigError as e:
         typer.echo(f"error: {e}", err=True)
         raise typer.Exit(code=1) from e

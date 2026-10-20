@@ -10,6 +10,7 @@ import typer
 
 from d200_deck import paths
 from d200_deck.errors import ConfigError
+from d200_deck.web.auth.gate import MAX_PASSWORD
 from d200_deck.web.auth.settings import load_settings, parse_settings, save_settings, to_json
 from d200_deck.web.auth.verifier import make_verifier
 
@@ -32,8 +33,8 @@ def passwd(
     """Enable the web login with this user and a prompted password; other settings are kept."""
     path = auth_file or paths.auth_file()
     password = typer.prompt("Password", hide_input=True, confirmation_prompt=True)
-    if len(password) < MIN_PASSWORD:
-        typer.echo(f"error: use at least {MIN_PASSWORD} characters", err=True)
+    if not MIN_PASSWORD <= len(password) <= MAX_PASSWORD:
+        typer.echo(f"error: use {MIN_PASSWORD}-{MAX_PASSWORD} characters", err=True)
         raise typer.Exit(code=1)
     try:
         old = load_settings(path)

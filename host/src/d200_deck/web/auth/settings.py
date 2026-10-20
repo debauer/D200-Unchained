@@ -135,11 +135,13 @@ def to_json(settings: AuthSettings) -> dict[str, Any]:
     return data
 
 
-def load_settings(path: Path) -> AuthSettings:
-    """Read the settings; a missing file means authentication is off."""
+def load_settings(path: Path, *, must_exist: bool = False) -> AuthSettings:
+    """Read the settings; a missing file means authentication is off unless `must_exist` (an explicit path)."""
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
+        if must_exist:
+            raise ConfigError(f"auth file {path} does not exist") from None
         return AuthSettings()
     except OSError as e:
         raise ConfigError(f"cannot read {path}: {e}") from e

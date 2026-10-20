@@ -81,6 +81,7 @@ class AuthGate:
             "expires_in": left,
             "methods": [m for m, on in (("password", self.settings.password_login), ("oidc", self.oidc)) if on],
             "username": session.username if session else None,
+            "identity": session.identity if session else None,
         }
 
     def _status(self, handler: DeckHandler, session: Session | None) -> None:
@@ -111,7 +112,7 @@ class AuthGate:
         if not (user_ok and password_ok):
             raise ApiError(HTTPStatus.UNAUTHORIZED, "invalid username or password")
         self.store.revoke(self.token(handler))
-        token = self.store.create(user)
+        token = self.store.create(self.settings.username, f"local:{self.settings.username}")
         session = self.store.lookup(token)
         handler.json_response(
             HTTPStatus.OK,

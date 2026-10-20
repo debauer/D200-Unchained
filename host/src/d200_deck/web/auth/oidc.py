@@ -6,6 +6,7 @@ Public client, Authorization Code with PKCE; only RS256 ID tokens are accepted. 
 from __future__ import annotations
 
 import base64
+import importlib.util
 import json
 import ssl
 import threading
@@ -15,8 +16,8 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-from d200_deck.errors import DeckError
-from d200_deck.web.auth.settings import OidcSettings
+from d200_deck.errors import ConfigError, DeckError
+from d200_deck.web.auth.settings import AuthSettings, OidcSettings
 
 TIMEOUT_S = 5.0
 MAX_RESPONSE = 256 * 1024
@@ -52,9 +53,16 @@ def _segment(token: str, index: int) -> dict[str, Any]:
     return value
 
 
-def claim_path(claims: dict[str, Any], path: str) -> Any:
+def check_oidc_dependencies(settings: AuthSettings) -> None:
+    """Fail at startup, not in the callback, when OIDC is on but the `oidc` extra is not installed."""
+    if settings.enabled and settings.oidc and importlib.util.find_spec("joserfc") is None:
+        raise ConfigError("auth: oidc needs the optional dependency joserfc: pip install 'd200-deck[oidc]'")
+
+
+def claim_path(claims: dict[str, Any], path: str, client_id: str = "") -> Any:
+    """Follow a dotted path; `{client_id}` stands for one whole key, even if the id itself holds dots."""
     value: Any = claims
-    for part in path.split("."):
+    for part in (client_id if p == "{client_id}" else p for p in path.split(".")):
         if not isinstance(value, dict) or part not in value:
             return None
         value = value[part]
@@ -196,12 +204,12 @@ class OidcClient:
             raise OidcError("token", "ID token azp does not match the client")
         return claims
 
-    def identity(self, claims: dict[str, Any]) -> str:
-        """The user name for the session, after the role check (`required_role`; empty: none)."""
+    def identity(self, claims: dict[str, Any]) -> tuple[str, str]:
+        """(user name, stable identity from issuer and sub) after the role check (`required_role`; empty: none)."""
         role = self.settings.required_role
         if role:
-            roles = claim_path(claims, self.settings.role_claim.format(client_id=self.settings.client_id))
+            roles = claim_path(claims, self.settings.role_claim, self.settings.client_id)
             if not isinstance(roles, list) or role not in roles:
                 raise OidcError("forbidden", f"user lacks the role {role!r}")
         name = claims.get(self.settings.username_claim) or claims["sub"]
-        return str(name)[:64]
+        return str(name)[:64], f"oidc:{self.settings.issuer}#{claims['sub']}"

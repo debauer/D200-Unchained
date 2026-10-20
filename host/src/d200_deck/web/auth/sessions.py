@@ -16,6 +16,7 @@ _COOKIE_VALUE = re.compile(r"^[0-9a-f]{64}$")
 @dataclass(frozen=True)
 class Session:
     username: str
+    identity: str  # stable and distinct per account kind: local login or OIDC issuer+sub
     expires: float  # time.monotonic()
 
 
@@ -38,7 +39,7 @@ class SessionStore:
         self._lock = threading.Lock()
         self._sessions: dict[bytes, Session] = {}
 
-    def create(self, username: str) -> str:
+    def create(self, username: str, identity: str) -> str:
         """A new session (always a fresh token); the oldest one makes room when the table is full."""
         token = secrets.token_hex(32)
         now = time.monotonic()
@@ -47,7 +48,7 @@ class SessionStore:
             while len(self._sessions) >= self.capacity:
                 oldest = min(self._sessions, key=lambda k: self._sessions[k].expires)
                 del self._sessions[oldest]
-            self._sessions[_digest(token)] = Session(username, now + self.ttl_s)
+            self._sessions[_digest(token)] = Session(username, identity, now + self.ttl_s)
         return token
 
     def lookup(self, token: str | None) -> Session | None:

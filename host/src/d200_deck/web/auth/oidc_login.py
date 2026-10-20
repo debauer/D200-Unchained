@@ -111,11 +111,13 @@ class OidcLogin:
             raise OidcError("token", "callback without code")
         try:
             claims = self.client.verify(self.client.exchange(code, tx[2]), tx[1])
-            return self.store.create(self.client.identity(claims))
+            username, identity = self.client.identity(claims)
         except OidcError:
             raise
-        except DeckError as e:  # e.g. the optional dependency is missing
+        except DeckError as e:
             raise OidcError("provider", str(e)) from e
+        self.store.revoke(parse_cookie(handler.headers.get("Cookie", ""), self.settings.cookie_name))
+        return self.store.create(username, identity)
 
     def _session_cookie(self, token: str) -> str:
         return self._cookie(self.settings.cookie_name, token, self.settings.session_ttl_seconds)
