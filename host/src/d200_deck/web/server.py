@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import queue
 import re
 import threading
 from dataclasses import asdict
@@ -24,13 +23,16 @@ from d200_deck.errors import (
 )
 from d200_deck.service.host import HostService
 from d200_deck.service.keyactions import HOST_ACTIONS
+from d200_deck.web.apierror import ApiError
+from d200_deck.web.auth.gate import AuthGate
+from d200_deck.web.auth.settings import AuthSettings
+from d200_deck.web.events import stream_events
 from d200_deck.web.mqtt_api import mqtt_state, update_mqtt
 
 log = logging.getLogger(__name__)
 
 API_VERSION = 1
 MAX_BODY = 2 << 20
-KEEPALIVE_S = 15.0
 SHUTDOWN_POLL_S = 0.1  # how quickly shutdown() returns
 MUTATING = {"PUT", "POST", "DELETE"}
 CSRF_HEADER = "X-Deck-Request"
@@ -49,12 +51,6 @@ KEY_PATH = re.compile(r"^/api/(?:pages/([a-z0-9_-]{1,32})/)?keys/(\d+)/(image|ic
 
 def web_root() -> Path:
     return Path(str(resources.files("d200_deck") / "web" / "static"))
-
-
-class ApiError(Exception):
-    def __init__(self, status: HTTPStatus, message: str) -> None:
-        super().__init__(message)
-        self.status = status
 
 
 def info_json(service: HostService) -> dict[str, Any]:
@@ -78,6 +74,7 @@ class DeckHandler(BaseHTTPRequestHandler):
 
     server: DeckWebServer
     protocol_version = "HTTP/1.1"
+    _body_read = False
 
     def log_message(self, format: str, *args: Any) -> None:
         log.debug("%s %s", self.address_string(), format % args)
@@ -97,17 +94,24 @@ class DeckHandler(BaseHTTPRequestHandler):
         self._handle("DELETE")
 
     def _handle(self, method: str) -> None:
+        self._body_read = False
         try:
             self._check_access(method)
             path = self.path.split("?", 1)[0]
-            if path.startswith("/api/"):
+            if path.startswith("/auth/"):
+                self.server.auth.handle(self, method, path)
+            elif path.startswith("/api/"):
+                self.server.auth.guard(self, path)
                 self._api(method, path)
             elif method == "GET":
                 self._static(path)
             else:
                 raise ApiError(HTTPStatus.METHOD_NOT_ALLOWED, f"{method} not allowed on {path}")
         except ApiError as e:
-            self._json(e.status, {"error": str(e)})
+            headers = dict(e.headers)
+            if method in MUTATING and not self._body_read:
+                headers["Connection"] = "close"  # the unread request body must not be parsed as the next request
+            self._json(e.status, {"error": str(e)}, headers)
         except (BrokenPipeError, ConnectionResetError):
             log.debug("client went away during %s %s", method, self.path)
 
@@ -116,6 +120,9 @@ class DeckHandler(BaseHTTPRequestHandler):
             raise ApiError(HTTPStatus.FORBIDDEN, "host not allowed")
         if method in MUTATING and self.headers.get(CSRF_HEADER) != "1":
             raise ApiError(HTTPStatus.FORBIDDEN, f"missing {CSRF_HEADER} header")
+        origin = self.headers.get("Origin")
+        if method in MUTATING and origin is not None and origin != self.server.origin_for(self.headers["Host"]):
+            raise ApiError(HTTPStatus.FORBIDDEN, "origin not allowed")
 
     def _api(self, method: str, path: str) -> None:
         service = self.server.service
@@ -138,7 +145,7 @@ class DeckHandler(BaseHTTPRequestHandler):
             except ConfigError as e:
                 raise ApiError(HTTPStatus.BAD_REQUEST, str(e)) from e
         elif path == "/api/events" and method == "GET":
-            self._events()
+            stream_events(self, self.server.auth.session)
         elif path == "/api/page" and method == "POST":
             self._show_page()
         elif m := KEY_PATH.match(path):
@@ -208,19 +215,25 @@ class DeckHandler(BaseHTTPRequestHandler):
     # --- helpers ---------------------------------------------------------
 
     def _body(self) -> bytes:
+        return self.read_body(MAX_BODY)
+
+    def read_body(self, limit: int) -> bytes:
         try:
             length = int(self.headers.get("Content-Length", ""))
         except ValueError as e:
             raise ApiError(HTTPStatus.LENGTH_REQUIRED, "Content-Length required") from e
-        if not 0 <= length <= MAX_BODY:
-            raise ApiError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, f"body limit is {MAX_BODY} bytes")
+        if not 0 <= length <= limit:
+            raise ApiError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, f"body limit is {limit} bytes")
+        self._body_read = True
         return self.rfile.read(length)
 
-    def _send(self, status: HTTPStatus, content_type: str, body: bytes) -> None:
+    def _send(self, status: HTTPStatus, content_type: str, body: bytes, headers: dict[str, str] | None = None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -229,8 +242,10 @@ class DeckHandler(BaseHTTPRequestHandler):
             raise ApiError(HTTPStatus.NOT_FOUND, missing)
         self._send(HTTPStatus.OK, "application/octet-stream", path.read_bytes())
 
-    def _json(self, status: HTTPStatus, data: Any) -> None:
-        self._send(status, "application/json", json.dumps(data).encode())
+    def _json(self, status: HTTPStatus, data: Any, headers: dict[str, str] | None = None) -> None:
+        self._send(status, "application/json", json.dumps(data).encode(), headers)
+
+    json_response = _json
 
     def _static(self, path: str) -> None:
         root = self.server.root.resolve()
@@ -240,55 +255,43 @@ class DeckHandler(BaseHTTPRequestHandler):
         content_type = CONTENT_TYPES.get(target.suffix, "application/octet-stream")
         self._send(HTTPStatus.OK, content_type, target.read_bytes())
 
-    def _events(self) -> None:
-        service = self.server.service
-        q = service.hub.subscribe()
-        try:
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self._sse("status", {"connected": service.connected})
-            self._sse("brightness", service.brightness.snapshot().to_json())
-            self._sse("page", {"page": service.page})
-            self._sse("values", service.values())
-            self._sse("mqtt", mqtt_state(service))
-            while not service.stop.is_set():
-                try:
-                    message = q.get(timeout=KEEPALIVE_S)
-                except queue.Empty:
-                    self.wfile.write(b": keepalive\n\n")
-                    self.wfile.flush()
-                    continue
-                if message is None:
-                    break
-                self._sse(*message)
-        finally:
-            service.hub.unsubscribe(q)
-            self.close_connection = True
-
-    def _sse(self, kind: str, data: dict[str, Any]) -> None:
-        self.wfile.write(f"event: {kind}\ndata: {json.dumps(data)}\n\n".encode())
-        self.wfile.flush()
-
 
 class DeckWebServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address: tuple[str, int], service: HostService, root: Path, extra_hosts: tuple[str, ...]):
+    def __init__(
+        self,
+        address: tuple[str, int],
+        service: HostService,
+        root: Path,
+        extra_hosts: tuple[str, ...],
+        auth: AuthSettings,
+    ):
         super().__init__(address, DeckHandler)
         self.service = service
         self.root = root
+        self.auth = AuthGate(auth)
         port = self.server_address[1]
         names = {address[0], "localhost", "127.0.0.1"}
         self.allowed_hosts = {f"{n}:{port}" for n in names} | set(extra_hosts)
+        if auth.public_origin:
+            self.allowed_hosts.add(auth.public_host)
+
+    def origin_for(self, host: str) -> str:
+        """The Origin a browser sends for this server: the configured public one, else derived from Host."""
+        return self.auth.settings.public_origin or f"http://{host}"
 
 
-def start_web(
-    service: HostService, host: str, port: int, root: Path | None = None, extra_hosts: tuple[str, ...] = ()
+def start_web(  # noqa: PLR0913, PLR0917 - one parameter per setting
+    service: HostService,
+    host: str,
+    port: int,
+    root: Path | None = None,
+    extra_hosts: tuple[str, ...] = (),
+    auth: AuthSettings | None = None,
 ) -> DeckWebServer:
     """Start the web server in a background thread; stop it with `server.shutdown()`."""
-    server = DeckWebServer((host, port), service, root or web_root(), extra_hosts)
+    server = DeckWebServer((host, port), service, root or web_root(), extra_hosts, auth or AuthSettings())
     threading.Thread(target=server.serve_forever, args=(SHUTDOWN_POLL_S,), name="deck-web", daemon=True).start()
     log.info("web UI on http://%s:%d/", host, server.server_address[1])
     return server

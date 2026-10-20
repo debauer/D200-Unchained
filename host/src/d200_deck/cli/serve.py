@@ -17,6 +17,7 @@ from d200_deck import paths
 from d200_deck.errors import ConfigError
 from d200_deck.service.bootstrap import BootstrapSettings, ensure_deckd
 from d200_deck.service.host import HostService, ServiceSettings
+from d200_deck.web.auth.settings import AuthSettings, load_settings
 from d200_deck.web.server import DeckWebServer, start_web
 
 DEFAULT_WEB = "127.0.0.1:7280"
@@ -38,6 +39,9 @@ def serve(  # noqa: PLR0913, PLR0917 - one parameter per CLI option
         str, typer.Option("--web", help="Web UI address HOST:PORT; other hosts than 127.0.0.1 expose key commands.")
     ] = DEFAULT_WEB,
     no_web: Annotated[bool, typer.Option("--no-web", help="Do not start the web UI.")] = False,
+    auth_file: Annotated[
+        Path | None, typer.Option("--auth-file", help="Web login settings (default: $XDG_CONFIG_HOME/deck/auth.json).")
+    ] = None,
     web_allow_host: Annotated[
         list[str] | None, typer.Option("--web-allow-host", help="Extra Host header value to accept (e.g. name:7280).")
     ] = None,
@@ -86,7 +90,12 @@ def serve(  # noqa: PLR0913, PLR0917 - one parameter per CLI option
     signal.signal(signal.SIGHUP, on_hup)
     log = logging.getLogger(__name__)
     log.info("config %s, images %s", settings.config_path, settings.images_dir)
-    server = None if no_web else _start_web(service, web, tuple(web_allow_host or ()))
+    try:
+        auth = load_settings(auth_file or paths.auth_file())
+    except ConfigError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(code=1) from e
+    server = None if no_web else _start_web(service, web, tuple(web_allow_host or ()), auth)
     try:
         service.run()
     finally:
@@ -110,16 +119,18 @@ def _bootstrap(enabled: bool, adb_path: str, target: Target, binary: Path | None
     return partial(ensure_deckd, BootstrapSettings(adb_path, target.port, binary))
 
 
-def _start_web(service: HostService, address: str, extra_hosts: tuple[str, ...]) -> DeckWebServer:
+def _start_web(service: HostService, address: str, extra_hosts: tuple[str, ...], auth: AuthSettings) -> DeckWebServer:
     host, sep, port = address.rpartition(":")
     if not sep or not port.isdigit():
         raise typer.BadParameter(f"expected HOST:PORT, got {address!r}", param_hint="--web")
-    if host not in LOOPBACK:
+    if host not in LOOPBACK and not auth.enabled:
         logging.getLogger(__name__).warning(
-            "web UI on %s is reachable from the network; anyone who can open it can configure commands", host
+            "web UI on %s is reachable from the network without login; anyone who can open it can configure commands"
+            " (see `deck passwd`)",
+            host,
         )
     try:
-        return start_web(service, host, int(port), extra_hosts=extra_hosts)
+        return start_web(service, host, int(port), extra_hosts=extra_hosts, auth=auth)
     except OSError as e:
         typer.echo(f"error: cannot start the web UI on {address}: {e}", err=True)
         raise typer.Exit(code=1) from e

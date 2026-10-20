@@ -13,6 +13,7 @@ import typer
 
 from d200_deck import __version__
 from d200_deck.cli.demo import PALETTE, gradient
+from d200_deck.cli.passwd import passwd
 from d200_deck.cli.serve import serve
 from d200_deck.constants import DEFAULT_HOST, DEFAULT_PORT
 from d200_deck.device.client import DeckClient
@@ -278,6 +279,7 @@ def demo(ctx: typer.Context) -> None:
 
 
 app.command()(serve)
+app.command()(passwd)
 
 
 def main() -> int:

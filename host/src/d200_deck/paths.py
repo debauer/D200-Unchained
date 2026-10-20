@@ -34,3 +34,8 @@ def images_dir() -> Path:
 def mqtt_file() -> Path:
     """Broker settings incl. the password: kept apart from config.json (which is exported and served by the API)."""
     return config_dir() / "mqtt.json"
+
+
+def auth_file() -> Path:
+    """Web login settings incl. the password verifier: kept apart from config.json like mqtt.json."""
+    return config_dir() / "auth.json"
