@@ -1,0 +1,77 @@
+# Setup and operation: see README.md in this directory.
+name: d200-deck
+
+services:
+  deck:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    # adb talks to the D200 through /dev/bus/usb: no privileged mode, only USB character devices (major 189).
+    device_cgroup_rules:
+      - "c 189:* rmw"
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - config:/config
+      - data:/data
+    group_add:
+      - "${D200_USB_GID:?set D200_USB_GID in .env}"
+    networks:
+      internal: {}
+
+  proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on: [deck]
+    environment:
+      DECK_DOMAIN: ${DECK_DOMAIN:?set DECK_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/deck.conf.template:/etc/nginx/templates/deck.conf.template:ro
+      - ./nginx/90-reload-certs.sh:/docker-entrypoint.d/90-reload-certs.sh:ro
+      - letsencrypt:/etc/letsencrypt:ro
+    networks:
+      internal:
+        ipv4_address: 172.28.0.10  # the value for `deck passwd --trusted-proxy`
+
+  certbot:
+    build: certbot
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/renew.sh"]
+    volumes:
+      - ./certbot/renew.sh:/renew.sh:ro
+      - letsencrypt:/etc/letsencrypt
+      - ./secrets/inwx.ini:/run/secrets/inwx.ini:ro
+
+  # One-off: `docker compose run --rm certbot-issue` before the first `up`.
+  certbot-issue:
+    build: certbot
+    profiles: [setup]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        certbot certonly --non-interactive --agree-tos -m "$$LETSENCRYPT_EMAIL"
+        -a dns-inwx --dns-inwx-credentials /run/secrets/inwx.ini
+        --dns-inwx-propagation-seconds "$$INWX_PROPAGATION_SECONDS"
+        $${LETSENCRYPT_STAGING:+--test-cert} -d "$$DECK_DOMAIN"
+    environment:
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:?set LETSENCRYPT_EMAIL in .env}
+      LETSENCRYPT_STAGING: ${LETSENCRYPT_STAGING:-}
+      INWX_PROPAGATION_SECONDS: ${INWX_PROPAGATION_SECONDS:-120}
+      DECK_DOMAIN: ${DECK_DOMAIN:?set DECK_DOMAIN in .env}
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - ./secrets/inwx.ini:/run/secrets/inwx.ini:ro
+
+networks:
+  internal:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+volumes:
+  config:
+  data:
+  letsencrypt:

@@ -1,0 +1,3 @@
+# Ulanzi D200 (adb gadget, vendor 0x2207): let the group that the compose file adds to the container use it.
+# Create the group first: sudo groupadd -r usb-d200   (its numeric id goes to D200_USB_GID in .env)
+SUBSYSTEM=="usb", ATTR{idVendor}=="2207", GROUP="usb-d200", MODE="0660"

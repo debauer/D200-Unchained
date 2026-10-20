@@ -27,6 +27,15 @@ The API can configure actions that the host executes. Therefore:
   `X-Deck-Request: 1`, otherwise `403`. A foreign origin cannot set this header
   without a CORS preflight, and the service does not answer preflights.
 - The Linux host listens on `127.0.0.1` only by default.
+- **Login (Linux host, optional)**: `deck passwd` writes `auth.json` (mode 0600, next to `config.json`).
+  With it, every `/api/*` route including images, log and the event stream answers `401` without a valid
+  session cookie. `GET /auth/session` (public) reports `required`, `authenticated`, `session_ttl_seconds`,
+  `expires_in`, `methods` and `username`; `POST /auth/login` takes `{"username", "password"}` (`429` with
+  `Retry-After` when throttled); `POST /auth/logout` ends the session. The cookie is `deck_session`
+  (`__Host-deck_session` and `Secure` when `public_origin` is `https://`), HttpOnly, SameSite=Lax, fixed lifetime
+  (default 48 h, not renewed). Sessions live in RAM. Changing requests with an `Origin` header must match
+  `public_origin` (default `http://<Host>`). Behind a reverse proxy set `public_origin` and `trusted_proxies`
+  (only then `X-Forwarded-For` is used for throttling). OIDC is not implemented on the Linux host yet.
 
 ## Endpoints
 

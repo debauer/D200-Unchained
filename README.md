@@ -61,7 +61,7 @@ is the program that stores the configuration, draws the keys and reacts to key p
 | Images and text | browser for static images, Python for dynamic keys | browser for static images, firmware for dynamic keys (same font/layout) |
 | Python library | yes ([docs/python-library.md](docs/python-library.md)) | no |
 | Autostart | systemd user unit | boots with the power |
-| Security | no authentication yet, keep it on `127.0.0.1` | no authentication yet, anyone in your WiFi can use the UI; MQTT password is stored unencrypted in flash |
+| Security | optional password login (`deck passwd`), TLS through a reverse proxy ([docker/](docker/README.md)); without it keep it on `127.0.0.1` | no authentication yet, anyone in your WiFi can use the UI; MQTT password is stored unencrypted in flash |
 | Status | usable | work in progress, see `esp32/README.md` |
 
 Pick the Linux host if you want shell commands on key presses or live values from your system.
@@ -107,8 +107,9 @@ To start it at login, enable the systemd user unit written by `install.sh`. See
 ## Security
 
 The following local-access and shell-command guidance applies to the **Linux host**. Its web configurator
-can define shell commands, so treat access to it like a shell on the host. There is **no authentication yet**;
-a password feature is planned. The ESP32 is network-accessible and has no shell actions; see
+can define shell commands, so treat access to it like a shell on the host. Authentication is
+off until you run `deck passwd` (local password login with 48 h sessions, see [docs/web-api.md](docs/web-api.md#security));
+TLS needs a reverse proxy, e.g. the Compose setup in [docker/](docker/README.md). The ESP32 is network-accessible and has no shell actions; see
 [ESP32 security](esp32/README.md#security) for its access controls and credential storage. Until then:
 
 - **Keep the web UI on `127.0.0.1`** (the default). Anyone who can open it can run

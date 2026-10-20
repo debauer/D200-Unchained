@@ -1,0 +1,33 @@
+# ${DECK_DOMAIN} is filled in by the nginx image (envsubst); nginx's own $variables are left alone.
+upstream deck {
+    server deck:7280;
+}
+
+server {
+    listen 80;
+    server_name ${DECK_DOMAIN};
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${DECK_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${DECK_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DECK_DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 2m;  # the host accepts bodies up to 2 MiB
+
+    location / {
+        proxy_pass http://deck;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;  # replace, never append: clients must not spoof it
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;  # server-sent events (/api/events)
+        proxy_read_timeout 1h;
+    }
+}
