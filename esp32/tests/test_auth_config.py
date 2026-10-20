@@ -62,6 +62,23 @@ class AuthConfigTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises((ValueError, TypeError)):
                 self.config(value)
 
+    def test_oidc_configuration(self):
+        base = {"web": {"public_origin": "http://deck.example"}, "auth": {
+            "enabled": True, "username": "admin", "password_hash": make_verifier("test-only-password")}}
+        for scheme in ("http", "https"):
+            value = self.config({**base, "auth": {**base["auth"], "oidc": {
+                "issuer": scheme + "://id.example/realms/test/", "client_id": "deck"}}})
+            self.assertTrue(value["oidc"]["enabled"])
+            self.assertEqual(value["oidc"]["issuer"], scheme + "://id.example/realms/test")
+            self.assertIn("#define WEB_OIDC_ENABLED 1", header(value))
+        for bad in ([], {}, {"issuer": "file:///x", "client_id": "deck"},
+                    {"issuer": "https://id.example?x=1", "client_id": "deck"},
+                    {"issuer": "https://id.example", "client_id": ""},
+                    {"issuer": "https://id.example", "client_id": "deck", "scopes": "profile"},
+                    {"issuer": "https://id.example", "client_id": "deck", "ca_file": "missing.pem"}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.config({**base, "auth": {**base["auth"], "oidc": bad}})
+
     def test_username_is_utf8_c_escaped(self):
         value = self.config({"auth": {"username": 'a"\\\u00e4\U0001f600'}})
         result = header(value)

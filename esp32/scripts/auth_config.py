@@ -4,6 +4,7 @@ import json
 import re
 from pathlib import Path
 from urllib.parse import urlsplit
+import oidc_config
 
 DEFAULT_TTL = 172800
 DEFAULT_ROUNDS = 120000
@@ -56,7 +57,7 @@ def load(project, config_path=None):
     raw = json.loads(path.read_text()) if path.exists() else {}
     _object(raw, "configuration", {"web", "auth"})
     web = _object(raw.get("web", {}), "web", {"transport", "public_origin", "certificate", "private_key"})
-    auth = _object(raw.get("auth", {}), "auth", {"enabled", "username", "password_hash", "session_ttl_seconds"})
+    auth = _object(raw.get("auth", {}), "auth", {"enabled", "username", "password_hash", "session_ttl_seconds", "oidc"})
     transport = web.get("transport", "http")
     if transport not in ("http", "https"):
         raise ValueError("web.transport must be http or https")
@@ -92,7 +93,8 @@ def load(project, config_path=None):
         raise ValueError("enabled authentication requires username and public_origin")
     cert, key = _tls_material(project, web) if transport == "https" else (None, None)
     return dict(tls=transport == "https", port=port, origin=origin, host=host, enabled=enabled,
-                ttl=ttl, username=username, rounds=rounds, salt=salt, digest=digest, cert=cert, key=key)
+                ttl=ttl, username=username, rounds=rounds, salt=salt, digest=digest, cert=cert, key=key,
+                oidc=oidc_config.load(auth.get("oidc"), project, enabled))
 
 
 def header(config):
@@ -111,4 +113,9 @@ def header(config):
         f"#define WEB_AUTH_SALT {array(config['salt'])}",
         f"#define WEB_AUTH_DIGEST {array(config['digest'])}",
         '#define WEB_COOKIE_NAME "' + ("__Host-deck_session" if config["tls"] else "deck_session") + '"',
+        f"#define WEB_OIDC_ENABLED {int(config['oidc']['enabled'])}",
+        f"#define WEB_OIDC_ISSUER {quote(config['oidc']['issuer'])}",
+        f"#define WEB_OIDC_CLIENT_ID {quote(config['oidc']['client_id'])}",
+        f"#define WEB_OIDC_SCOPES {quote(config['oidc']['scopes'])}",
+        '#define WEB_OIDC_COOKIE "' + ("__Host-deck_oidc" if config["tls"] else "deck_oidc") + '"',
     )) + "\n"

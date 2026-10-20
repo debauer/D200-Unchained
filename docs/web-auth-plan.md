@@ -83,7 +83,8 @@ all features below are already available.
 - Refresh JWKS once on an unknown kid, with rate limiting and bounded keys.
 - Proposed authorization: explicit `deck-admin` Keycloak client role included
   in the signed ID token; realm membership alone is not enough. Confirm this
-  policy before implementing the role check.
+  policy before implementing the role check. Confirmed by the user: require
+  the `deck-admin` client role in the signed ID token.
 - Successful OIDC login creates the same local session as password login.
 - Initial logout ends the device session; Keycloak SSO remains active. Global
   logout and immediate propagation of role withdrawal are later extensions.
@@ -130,3 +131,14 @@ policies. All 30 JavaScript tests pass, including missing-session recovery,
 pending-edit retention for the same user and logout behavior. Keycloak OIDC
 is still unimplemented; its role policy and certificate provisioning remain
 open as described above.
+
+### ESP32 OIDC implementation
+
+The user confirmed the `deck-admin` client-role policy. The first verified
+increment contains build-time OIDC settings, bounded one-use browser
+transactions, PKCE/S256, strict JSON/base64url parsing and RS256/JWK/claim
+validation with the existing mbedTLS library. Independent Python-signed token
+vectors cover issuer/audience/azp/nonce/time checks, signatures, roles and
+stable issuer/subject identities. Six configuration tests pass. The HTTP
+worker/endpoints are the next increment; this primitives-only increment does
+not advertise a working firmware OIDC login yet.
