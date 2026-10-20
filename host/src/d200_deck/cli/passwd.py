@@ -10,7 +10,7 @@ import typer
 
 from d200_deck import paths
 from d200_deck.errors import ConfigError
-from d200_deck.web.auth.settings import load_settings, parse_settings, save_settings
+from d200_deck.web.auth.settings import load_settings, parse_settings, save_settings, to_json
 from d200_deck.web.auth.verifier import make_verifier
 
 MIN_PASSWORD = 8
@@ -46,7 +46,7 @@ def passwd(
             session_ttl_seconds=ttl if ttl is not None else old.session_ttl_seconds,
             trusted_proxies=tuple(trusted_proxy) if trusted_proxy else old.trusted_proxies,
         )
-        parse_settings({**new.__dict__, "trusted_proxies": list(new.trusted_proxies)})  # validate before writing
+        parse_settings(to_json(new))  # validate before writing
         save_settings(path, new)
     except ConfigError as e:
         typer.echo(f"error: {e}", err=True)

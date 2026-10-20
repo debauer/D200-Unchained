@@ -9,6 +9,7 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
 from d200_deck.web.apierror import ApiError
+from d200_deck.web.auth.oidc_login import CALLBACK_PATH, OidcLogin
 from d200_deck.web.auth.sessions import Session, SessionStore, parse_cookie
 from d200_deck.web.auth.settings import AuthSettings
 from d200_deck.web.auth.throttle import LoginThrottle
@@ -28,6 +29,7 @@ class AuthGate:
         self.settings = settings
         self.store = SessionStore(settings.session_ttl_seconds)
         self.throttle = LoginThrottle()
+        self.oidc = OidcLogin(settings, self.store) if settings.enabled and settings.oidc else None
 
     @property
     def enabled(self) -> bool:
@@ -56,8 +58,12 @@ class AuthGate:
             self._status(handler, self.session(handler))
         elif not self.enabled:
             raise ApiError(HTTPStatus.NOT_FOUND, "authentication disabled")
-        elif path == "/auth/login" and method == "POST":
+        elif path == "/auth/login" and method == "POST" and self.settings.password_login:
             self._login(handler)
+        elif self.oidc and path == "/auth/oidc/start" and method == "POST":
+            self.oidc.start(handler, self.source(handler))
+        elif self.oidc and path == CALLBACK_PATH and method == "GET":
+            self.oidc.callback(handler)
         elif path == "/auth/logout" and method == "POST":
             self.store.revoke(self.token(handler))
             handler.json_response(HTTPStatus.OK, {"logged_out": True}, {"Set-Cookie": self._cookie("", 0)})
@@ -73,7 +79,7 @@ class AuthGate:
             "authenticated": not self.enabled or session is not None,
             "session_ttl_seconds": self.settings.session_ttl_seconds,
             "expires_in": left,
-            "methods": ["password"] if self.enabled else [],
+            "methods": [m for m, on in (("password", self.settings.password_login), ("oidc", self.oidc)) if on],
             "username": session.username if session else None,
         }
 
