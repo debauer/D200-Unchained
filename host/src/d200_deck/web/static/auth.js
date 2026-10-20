@@ -16,14 +16,18 @@ export class LoginView {
       this.submitted?.({ username: $("login-user").value, password: $("login-password").value });
     });
     $("logout").addEventListener("click", () => this.onLogout?.());
+    $("login-oidc").addEventListener("click", () => this.submitted?.({ oidc: true }));
   }
 
   // Show the form; resolves with the entered credentials once.
-  credentials(message = "") {
+  credentials(message = "", methods = ["password"]) {
     $("login-error").textContent = message;
+    $("login-password-part").hidden = !methods.includes("password");
+    $("login-oidc").hidden = !methods.includes("oidc");
     $("login").hidden = false;
     lock(true);
     $("login-password").value = "";
+    if (!methods.includes("password")) return new Promise((resolve) => (this.submitted = resolve));
     ($("login-user").value ? $("login-password") : $("login-user")).focus();
     return new Promise((resolve) => (this.submitted = resolve));
   }
@@ -40,6 +44,22 @@ export class LoginView {
   }
 }
 
+const OIDC_ERRORS = {
+  denied: "The login was cancelled or denied.",
+  expired: "The login expired or was started in another browser. Try again.",
+  forbidden: "This account may not use the deck (role missing).",
+  token: "The identity provider's answer was refused.",
+  provider: "The identity provider cannot be reached.",
+};
+
+// `?auth_error=<code>` is what the OIDC callback leaves in the URL after a failed login.
+function oidcError() {
+  const code = new URLSearchParams(globalThis.location?.search).get("auth_error");
+  if (code === null) return "";
+  history.replaceState(null, "", location.pathname);
+  return OIDC_ERRORS[code] ?? "The login failed.";
+}
+
 export class AuthFlow {
   // hooks: { stop() closes live streams, view, autosave }
   constructor({ view, autosave, stop }) {
@@ -51,7 +71,8 @@ export class AuthFlow {
   // Resolves once the host is usable: open, or after a successful login.
   async init() {
     const session = await api.authSession();
-    if (session.required && !session.authenticated) await this.login();
+    const message = oidcError();
+    if (session.required && !session.authenticated) await this.login(message);
     else this.setUser(session);
   }
 
@@ -60,11 +81,15 @@ export class AuthFlow {
     this.view.setUser(this.username, session.required);
   }
 
-  async login() {
-    let message = "";
+  async login(message = "") {
+    const { methods } = await api.authSession();
     for (;;) {
-      const { username, password } = await this.view.credentials(message);
+      const { username, password, oidc } = await this.view.credentials(message, methods);
       try {
+        if (oidc) {
+          await this.redirectToProvider();
+          continue;
+        }
         this.setUser(await api.login(username, password));
         this.view.hide();
         return;
@@ -72,6 +97,13 @@ export class AuthFlow {
         message = e.message;
       }
     }
+  }
+
+  // Leaves the page for the identity provider; the callback lands on a fresh page, so memory edits are lost.
+  async redirectToProvider() {
+    if (this.autosave.pending && !confirm("Unsaved edits are lost when you sign in through Keycloak. Continue?")) return;
+    location.assign((await api.oidcStart()).redirect);
+    await new Promise(() => {}); // the page is being replaced
   }
 
   // The session ended (expiry, logout, host restart). Resolves with true if the same user is back, so

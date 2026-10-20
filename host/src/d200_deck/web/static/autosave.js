@@ -34,6 +34,10 @@ export class Autosave {
     this.paused = false; // no login: edits stay pending
   }
 
+  get pending() {
+    return this.configDirty || this.dirty.size > 0;
+  }
+
   // Stop saving (the session ended); edits are kept for resume() or dropped by discard().
   pause() {
     this.paused = true;

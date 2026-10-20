@@ -49,6 +49,7 @@ export const api = {
   login: async (username, password) =>
     (await check(await fetch("/auth/login", { method: "POST", headers: { ...MUTATE, "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) }), true)).json(),
   logout: () => send("POST", "/auth/logout"),
+  oidcStart: () => send("POST", "/auth/oidc/start"), // { redirect } to the identity provider
   info: () => json("/api/info"),
   config: () => json("/api/config"),
   putConfig: (cfg) => send("PUT", "/api/config", JSON.stringify(cfg), "application/json"),

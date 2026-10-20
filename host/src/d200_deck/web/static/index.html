@@ -254,14 +254,17 @@
   <div id="login" class="login" hidden>
     <form id="login-form" class="login-box" autocomplete="on">
       <div class="title">Login</div>
-      <label class="field">Username
-        <input id="login-user" name="username" autocomplete="username" maxlength="64" required>
-      </label>
-      <label class="field">Password
-        <input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="128" required>
-      </label>
+      <div id="login-password-part" class="login-part">
+        <label class="field">Username
+          <input id="login-user" name="username" autocomplete="username" maxlength="64" required>
+        </label>
+        <label class="field">Password
+          <input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="128" required>
+        </label>
+        <button type="submit" class="btn primary cut">Sign in</button>
+      </div>
       <div id="login-error" class="login-error" role="alert"></div>
-      <button type="submit" class="btn primary cut">Sign in</button>
+      <button type="button" id="login-oidc" class="btn outline" hidden>Sign in with Keycloak</button>
     </form>
   </div>
 

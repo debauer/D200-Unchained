@@ -7,9 +7,9 @@ import { AuthFlow } from "../../src/d200_deck/web/static/auth.js";
 const reply = (status, body = {}) => async () => new Response(JSON.stringify(body), { status });
 
 function flow(t, logins) {
-  const calls = { stop: 0, shown: [], user: [] };
+  const calls = { stop: 0, shown: [], user: [], methods: [] };
   const view = {
-    credentials: async (message) => (calls.shown.push(message), logins.shift()),
+    credentials: async (message, methods) => (calls.shown.push(message), calls.methods.push(methods), logins.shift()),
     hide() {},
     setUser: (name, required) => calls.user.push([name, required]),
   };
@@ -38,7 +38,7 @@ test("401 raises AuthRequired and notifies once; a failed login does not", async
 
 test("init shows the form until the login works", async (t) => {
   const answers = [{ username: "a", password: "bad" }, { username: "a", password: "good" }];
-  t.mock.method(api, "authSession", async () => ({ required: true, authenticated: false, username: null }));
+  t.mock.method(api, "authSession", async () => ({ required: true, authenticated: false, username: null, methods: ["password"] }));
   t.mock.method(api, "login", async (_user, password) => {
     if (password !== "good") throw new Error("invalid username or password");
     return session("a");
@@ -50,6 +50,7 @@ test("init shows the form until the login works", async (t) => {
 });
 
 test("the same user keeps pending edits, another user loses them", async (t) => {
+  t.mock.method(api, "authSession", async () => ({ ...session("a"), authenticated: false, methods: ["password"] }));
   t.mock.method(api, "login", async (username) => session(username));
   for (const [again, same] of [["a", true], ["b", false]]) {
     const { auth, autosave, calls } = flow(t, [{ username: again, password: "x" }]);
@@ -89,9 +90,46 @@ test("a save refused with 401 stays pending", async (t) => {
 
 test("simultaneous 401s share one login", async (t) => {
   let logins = 0;
+  t.mock.method(api, "authSession", async () => ({ ...session("a"), authenticated: false, methods: ["password"] }));
   t.mock.method(api, "login", async (username) => (logins++, session(username)));
   const { auth } = flow(t, [{ username: "a", password: "x" }]);
   const [one, two] = await Promise.all([auth.recover(), auth.recover()]);
   assert.equal(one, two);
   assert.equal(logins, 1);
+});
+
+function browserGlobals(t, values) {
+  for (const [name, value] of Object.entries(values)) {
+    const original = Object.getOwnPropertyDescriptor(globalThis, name);
+    Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
+    t.after(() => (original ? Object.defineProperty(globalThis, name, original) : delete globalThis[name]));
+  }
+}
+
+const settle = () => new Promise((r) => setTimeout(r, 10));
+
+test("the form offers what the host offers and shows why the provider login failed", async (t) => {
+  t.mock.method(api, "authSession", async () => ({ required: true, authenticated: false, username: null, methods: ["password", "oidc"] }));
+  t.mock.method(api, "oidcStart", async () => ({ redirect: "https://id.example/auth?x=1" }));
+  const assigned = [];
+  browserGlobals(t, { location: { assign: (url) => assigned.push(url), search: "?auth_error=forbidden", pathname: "/" }, history: { replaceState() {} } });
+  const { auth, calls } = flow(t, [{ oidc: true }]);
+  void auth.init();
+  await settle();
+  assert.deepEqual(calls.methods[0], ["password", "oidc"]);
+  assert.equal(calls.shown[0], "This account may not use the deck (role missing).");
+  assert.deepEqual(assigned, ["https://id.example/auth?x=1"]);
+});
+
+test("pending edits are only dropped by the provider redirect after confirmation", async (t) => {
+  t.mock.method(api, "oidcStart", async () => ({ redirect: "https://id.example/auth" }));
+  const assigned = [], answers = [false, true];
+  browserGlobals(t, { location: { assign: (url) => assigned.push(url) }, confirm: () => answers.shift() });
+  const { auth, autosave } = flow(t, []);
+  autosave.configDirty = true;
+  await auth.redirectToProvider(); // declined: returns, the form stays
+  assert.deepEqual(assigned, []);
+  void auth.redirectToProvider();
+  await settle();
+  assert.deepEqual(assigned, ["https://id.example/auth"]);
 });
