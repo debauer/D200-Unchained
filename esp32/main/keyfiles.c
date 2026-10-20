@@ -83,8 +83,19 @@ static const char *kind_of(const char *what)
 
 static esp_err_t get_file(httpd_req_t *req, const target_t *t, const char *kind)
 {
-    char path[sizeof IMAGE_DIR + 128];
-    file_path(path, sizeof path, t, kind);
+    char path[sizeof IMAGE_DIR + 260];
+    if (!kind[0]) {
+        cJSON *config = config_parse();
+        if (!config) return web_json_error(req, "500 Internal Server Error", "cannot load the config");
+        const cJSON *key = config_find_key(config_find_page(config, t->page), t->index);
+        const cJSON *image = cJSON_GetObjectItem(key, "image");
+        if (!cJSON_IsString(image)) {
+            cJSON_Delete(config);
+            return web_json_error(req, "404 Not Found", "key has no image");
+        }
+        snprintf(path, sizeof path, IMAGE_DIR "/%s", image->valuestring);
+        cJSON_Delete(config);
+    } else file_path(path, sizeof path, t, kind);
     FILE *f = fopen(path, "rb");
     if (!f) {
         char message[48];
@@ -167,12 +178,20 @@ esp_err_t keyfiles_handler(httpd_req_t *req)
     device_key_t window;
     if (!device_key_window(t.index, &window)) return web_json_error(req, "404 Not Found", "unknown key");
     cJSON *config = config_parse();
+    if (!config) return web_json_error(req, "500 Internal Server Error", "cannot load the config");
     bool page_known = config && config_find_page(config, t.page);
+    const cJSON *key = config_find_key(config_find_page(config, t.page), t.index);
+    const cJSON *type = cJSON_GetObjectItem(cJSON_GetObjectItem(key, "action"), "type");
+    bool needs_device = cJSON_IsString(type) && (!strcmp(type->valuestring, "bl_up") || !strcmp(type->valuestring, "bl_down") ||
+                                               !strcmp(type->valuestring, "disp_on") || !strcmp(type->valuestring, "disp_off"));
     cJSON_Delete(config);
     if (!page_known) return web_json_error(req, "404 Not Found", "unknown page");
     if (strcmp(t.what, "press") == 0) {
         if (req->method != HTTP_POST) return web_json_error(req, "405 Method Not Allowed", "method not allowed on press");
         if (!web_mutation_allowed(req)) return web_json_error(req, "403 Forbidden", "missing X-Deck-Request header");
+        device_state_t state;
+        device_snapshot(&state);
+        if (needs_device && !state.connected) return web_json_error(req, "503 Service Unavailable", "device is unreachable");
         /* TEST mode: the action runs as if the key was pressed, but nothing is published */
         char json[24];
         snprintf(json, sizeof json, "{\"started\":%s}", actions_run(t.index, t.page, true) ? "true" : "false");
@@ -191,6 +210,7 @@ esp_err_t keyfiles_handler(httpd_req_t *req)
     if (req->method == HTTP_PUT) {
         if (!put_file(req, path, (size_t)window.width * window.height * 2, &window)) return ESP_OK;
         if (!is_image) {
+            device_request_redraw((int)t.index);
             httpd_resp_set_type(req, "application/json");
             return httpd_resp_sendstr(req, "{\"stored\":true}");
         }
@@ -201,6 +221,7 @@ esp_err_t keyfiles_handler(httpd_req_t *req)
     if (req->method == HTTP_DELETE) {
         unlink(path);
         if (is_image) return update_key(req, &t, NULL);
+        device_request_redraw((int)t.index);
         httpd_resp_set_type(req, "application/json");
         return httpd_resp_sendstr(req, "{\"stored\":false}");
     }

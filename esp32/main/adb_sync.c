@@ -29,8 +29,12 @@ static esp_err_t pump(adb_t *a, uint32_t *command)
     if (m.command == A_OKAY) {
         remote_id = m.arg0;
     } else if (m.command == A_WRTE) {
-        if (m.length >= 8 && !a->got_reply) {
-            memcpy(a->reply, a->buf, 8);
+        if (!a->got_reply) {
+            size_t take = m.length < sizeof a->reply - a->reply_used ? m.length : sizeof a->reply - a->reply_used;
+            memcpy(a->reply + a->reply_used, a->buf, take);
+            a->reply_used += take;
+        }
+        if (a->reply_used == sizeof a->reply && !a->got_reply) {
             a->got_reply = 1;
             uint32_t n = a->reply[4] | a->reply[5] << 8 | a->reply[6] << 16 | (uint32_t)a->reply[7] << 24;
             if (memcmp(a->reply, "FAIL", 4) == 0) ESP_LOGE(TAG, "device: FAIL (%lu bytes of text follow)", (unsigned long)n);
@@ -63,16 +67,23 @@ esp_err_t adb_push(adb_t *a, const void *data, size_t len, const char *remote, u
     uint8_t *tmp = malloc(ADB_MAX_DATA);
     if (!tmp) return ESP_ERR_NO_MEM;
     a->got_reply = 0;
+    a->reply_used = 0;
     esp_err_t err = adb_send_msg(a, A_OPEN, LOCAL_ID, 0, "sync:", sizeof "sync:");
     uint32_t cmd = 0;
-    while (err == ESP_OK && cmd != A_OKAY) err = pump(a, &cmd);
+    while (err == ESP_OK && cmd != A_OKAY) {
+        err = pump(a, &cmd);
+        if (err == ESP_OK && cmd == A_CLSE) err = ESP_FAIL;
+    }
     if (err == ESP_OK) err = sync_write(a, "SEND", n, target, n, tmp);
     for (size_t off = 0; err == ESP_OK && off < len; off += CHUNK) {
         size_t take = len - off < CHUNK ? len - off : CHUNK;
         err = sync_write(a, "DATA", take, (const uint8_t *)data + off, take, tmp);
     }
     if (err == ESP_OK) err = sync_write(a, "DONE", 0, NULL, 0, tmp);
-    while (err == ESP_OK && !a->got_reply) err = pump(a, &cmd);
+    while (err == ESP_OK && !a->got_reply) {
+        err = pump(a, &cmd);
+        if (err == ESP_OK && cmd == A_CLSE) err = ESP_FAIL;
+    }
     if (err == ESP_OK && memcmp(a->reply, "OKAY", 4) != 0) err = ESP_FAIL;
     if (err == ESP_OK) {
         err = adb_send_msg(a, A_CLSE, LOCAL_ID, remote_id, NULL, 0);

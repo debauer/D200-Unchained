@@ -7,15 +7,17 @@
 
 /* The key configuration (host README), stored as JSON in the storage partition, and the key image files. */
 
+#ifndef IMAGE_DIR
 #define IMAGE_DIR "/storage/images"
+#endif
 
-/* Current configuration text (a default with one empty page when none is stored). Free with free(). */
+/* Current text (default only when absent); NULL on read/allocation failure. Free with free(). */
 char *config_load(size_t *length);
 
 /* Stores `text` (already checked) atomically. */
 bool config_store(const char *text, size_t length);
 
-/* The configuration as a tree (falls back to the default), free with cJSON_Delete; NULL only when out of memory. */
+/* Validated, normalized tree; NULL on read/parse/validation/allocation failure. Free with cJSON_Delete. */
 cJSON *config_parse(void);
 bool config_save(const cJSON *root);
 

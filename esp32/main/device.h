@@ -31,11 +31,14 @@ bool device_key_window(unsigned index, device_key_t *out);
 
 /* Backlight state (level 0-255 while on); the device task sends it to deckd, subscribers get a `brightness` event. */
 void device_set_backlight(int level, bool display_on);
+void device_set_brightness(int level); /* Config update: preserve the current display on/off state. */
+/* Atomic key action; display -1 preserves on/off. False while disconnected. */
+bool device_adjust_backlight(int delta, int display, device_state_t *out);
 
 /* Shows page `id` (it must exist): full redraw and a `page` event. */
 void device_set_page(const char *id);
 
-/* JSON for GET /api/info (needs `size` bytes, truncated otherwise); returns the length. */
+/* JSON for GET /api/info; returns required length (excluding NUL), SIZE_MAX on failure. */
 size_t device_info_json(char *out, size_t size);
 
 /* The `values` object of /api/info and the `values` event (variable values plus time and date). free() it. */

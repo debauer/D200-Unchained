@@ -54,7 +54,7 @@ void mqtt_json_value(const char *payload, const char *path, char *out, size_t si
 {
     cJSON *root = cJSON_Parse(payload);
     const cJSON *node = root;
-    char part[48];
+    char part[65];
     while (node && next_part(&path, part, sizeof part)) node = step(node, part);
     char text[40];
     if (!node || cJSON_IsObject(node) || cJSON_IsArray(node)) snprintf(out, size, "%s", MQTT_ERROR_VALUE);
@@ -62,7 +62,7 @@ void mqtt_json_value(const char *payload, const char *path, char *out, size_t si
     else if (cJSON_IsNull(node)) out[0] = 0;
     else if (cJSON_IsNumber(node)) {
         double d = node->valuedouble;
-        if (d == (double)(long long)d && d > -1e15 && d < 1e15) snprintf(text, sizeof text, "%lld", (long long)d);
+        if (d > -1e15 && d < 1e15 && d == (double)(long long)d) snprintf(text, sizeof text, "%lld", (long long)d);
         else snprintf(text, sizeof text, "%.15g", d);
         copy_cut(out, size, text, strlen(text));
     } else {

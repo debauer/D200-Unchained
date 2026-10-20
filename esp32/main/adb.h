@@ -23,6 +23,7 @@ typedef struct {
     uint8_t buf[ADB_MAX_DATA];  /* payload of the last message */
     uint8_t reply[8];           /* last sync reply ("OKAY"/"FAIL" + number) */
     uint32_t reply_len;         /* its length field, valid once `got_reply` */
+    size_t reply_used;
     int got_reply;
     bool broken;               /* a transfer failed since the last adb_connect */
     usb_transfer_t *out_x, *in_x; /* reused for every bulk transfer, allocated by the first one */

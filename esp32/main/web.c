@@ -7,6 +7,7 @@
 
 #include "cJSON.h"
 #include "config.h"
+#include "config_validate.h"
 #include "device.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -51,7 +52,7 @@ esp_err_t web_json_error(httpd_req_t *req, const char *status, const char *messa
 bool web_mutation_allowed(httpd_req_t *req)
 {
     char value[4];
-    return httpd_req_get_hdr_value_str(req, "X-Deck-Request", value, sizeof value) == ESP_OK && value[0] == '1';
+    return httpd_req_get_hdr_value_str(req, "X-Deck-Request", value, sizeof value) == ESP_OK && strcmp(value, "1") == 0;
 }
 
 #define REQUIRE_HEADER(req) \
@@ -82,9 +83,23 @@ static esp_err_t send_file(httpd_req_t *req)
 
 static esp_err_t api_info(httpd_req_t *req)
 {
-    char *body = malloc(INFO_MAX);
-    if (!body) return web_json_error(req, "500 Internal Server Error", "out of memory");
-    device_info_json(body, INFO_MAX);
+    size_t size = INFO_MAX;
+    char *body = NULL;
+    for (;;) {
+        char *next = realloc(body, size);
+        if (!next) {
+            free(body);
+            return web_json_error(req, "500 Internal Server Error", "out of memory");
+        }
+        body = next;
+        size_t needed = device_info_json(body, size);
+        if (needed == SIZE_MAX) {
+            free(body);
+            return web_json_error(req, "500 Internal Server Error", "cannot load device info");
+        }
+        if (needed < size) break;
+        size = needed + 1;
+    }
     httpd_resp_set_type(req, "application/json");
     esp_err_t err = httpd_resp_sendstr(req, body);
     free(body);
@@ -93,27 +108,14 @@ static esp_err_t api_info(httpd_req_t *req)
 
 static esp_err_t api_config_get(httpd_req_t *req)
 {
-    size_t length;
-    char *text = config_load(&length);
-    if (!text) return web_json_error(req, "500 Internal Server Error", "out of memory");
+    cJSON *config = config_parse();
+    char *text = config ? cJSON_PrintUnformatted(config) : NULL;
+    cJSON_Delete(config);
+    if (!text) return web_json_error(req, "500 Internal Server Error", "cannot load the config");
     httpd_resp_set_type(req, "application/json");
-    esp_err_t err = httpd_resp_send(req, text, length);
+    esp_err_t err = httpd_resp_sendstr(req, text);
     free(text);
     return err;
-}
-
-/* Basic shape only so far: a JSON object with a `pages` list. The full rules of the Linux host
- * (host/src/d200_deck/config/parse.py) follow with the key renderer. */
-static const char *check_config(const char *text)
-{
-    cJSON *root = cJSON_Parse(text);
-    if (!root) return "invalid JSON";
-    const char *problem = NULL;
-    if (!cJSON_IsObject(root)) problem = "config must be an object";
-    else if (!cJSON_IsArray(cJSON_GetObjectItem(root, "pages")) && !cJSON_IsArray(cJSON_GetObjectItem(root, "keys")))
-        problem = "config needs a `pages` list";
-    cJSON_Delete(root);
-    return problem;
 }
 
 static esp_err_t api_config_put(httpd_req_t *req)
@@ -132,30 +134,41 @@ static esp_err_t api_config_put(httpd_req_t *req)
         got += n;
     }
     body[got] = 0;
-    const char *problem = check_config(body);
-    if (problem) {
-        free(body);
+    const char *problem;
+    cJSON *saved = config_validate(body, &problem);
+    free(body);
+    if (!saved) {
         return web_json_error(req, "400 Bad Request", problem);
     }
     cJSON *before = config_parse(); /* to see which keys change */
-    if (!config_store(body, got)) {
+    body = cJSON_PrintUnformatted(saved);
+    if (body && strlen(body) > MAX_CONFIG) {
         cJSON_Delete(before);
+        cJSON_Delete(saved);
+        free(body);
+        return web_json_error(req, "413 Payload Too Large", "normalized config too large");
+    }
+    if (!body || !config_store(body, strlen(body))) {
+        cJSON_Delete(before);
+        cJSON_Delete(saved);
         ESP_LOGE(TAG, "cannot store the config");
         free(body);
         return web_json_error(req, "500 Internal Server Error", "cannot store the config");
     }
-    cJSON *saved = cJSON_Parse(body);
     if (saved) {
         config_purge_images(saved); /* images of deleted pages */
         mqtt_configure(saved);      /* topics of the variables */
         device_state_t state;
         device_snapshot(&state);
+        const cJSON *old_level = cJSON_GetObjectItem(before, "brightness"), *level = cJSON_GetObjectItem(saved, "brightness");
+        if (!cJSON_IsNumber(old_level) || old_level->valueint != level->valueint) device_set_brightness(level->valueint);
+        if (!config_find_page(saved, state.page)) device_set_page("root");
         draw_request_changes(before, saved, state.page); /* only what looks different */
     }
     cJSON_Delete(saved);
     cJSON_Delete(before);
     httpd_resp_set_type(req, "application/json");
-    esp_err_t err = httpd_resp_send(req, body, got);
+    esp_err_t err = httpd_resp_sendstr(req, body);
     free(body);
     return err;
 }
@@ -165,9 +178,9 @@ static esp_err_t api_page(httpd_req_t *req)
 {
     REQUIRE_HEADER(req);
     char body[96];
-    int n = req->content_len < sizeof body ? httpd_req_recv(req, body, req->content_len) : -1;
-    if (n <= 0) return web_json_error(req, "400 Bad Request", "expected {\"page\": \"<id>\"}");
-    body[n] = 0;
+    if (!req->content_len || req->content_len >= sizeof body) return web_json_error(req, "400 Bad Request", "invalid page body size");
+    int n = web_receive_body(req, body, sizeof body);
+    if (n <= 0) return ESP_FAIL;
     cJSON *json = cJSON_Parse(body);
     const cJSON *id = json ? cJSON_GetObjectItem(json, "page") : NULL;
     if (!cJSON_IsString(id)) {
@@ -217,9 +230,9 @@ static esp_err_t api_mqtt(httpd_req_t *req)
     if (req->method == HTTP_PUT) {
         REQUIRE_HEADER(req);
         char body[512];
-        int n = req->content_len < sizeof body ? httpd_req_recv(req, body, req->content_len) : -1;
-        if (n <= 0) return web_json_error(req, "400 Bad Request", "expected a JSON object");
-        body[n] = 0;
+        if (!req->content_len || req->content_len >= sizeof body) return web_json_error(req, "400 Bad Request", "invalid MQTT body size");
+        int n = web_receive_body(req, body, sizeof body);
+        if (n <= 0) return ESP_FAIL;
         const char *problem = mqtt_update(body);
         if (problem) return web_json_error(req, "400 Bad Request", problem);
     }
@@ -251,7 +264,7 @@ esp_err_t web_start(void)
     if (err != ESP_OK) return err;
     events_start();
     keyfiles_init();
-    const httpd_uri_t routes[] = {
+    static const httpd_uri_t routes[] = {
         {.uri = "/api/info", .method = HTTP_GET, .handler = api_info},
         {.uri = "/api/events", .method = HTTP_GET, .handler = events_handler},
         {.uri = "/api/config", .method = HTTP_GET, .handler = api_config_get},
@@ -274,7 +287,12 @@ esp_err_t web_start(void)
         {.uri = "/api/*", .method = HTTP_DELETE, .handler = api_missing},
         {.uri = "/*", .method = HTTP_GET, .handler = send_file}, /* last: the wildcard matches the rest */
     };
-    for (size_t i = 0; i < sizeof routes / sizeof routes[0]; i++) httpd_register_uri_handler(server, &routes[i]);
+    for (size_t i = 0; i < sizeof routes / sizeof routes[0]; i++) {
+        httpd_uri_t guarded = routes[i];
+        guarded.handler = web_guarded_request;
+        guarded.user_ctx = (void *)&routes[i];
+        ESP_ERROR_CHECK(httpd_register_uri_handler(server, &guarded));
+    }
     ESP_LOGI(TAG, "http server on port %d", cfg.server_port);
     return ESP_OK;
 }

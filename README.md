@@ -5,8 +5,10 @@ vendor app. A small Rust service, `deckd`, runs on the device and draws the 14 k
 windows; a Linux host (`deck`) configures the keys, runs their actions and serves a
 web configurator.
 
-This project is not affiliated with Ulanzi. It replaces the vendor app at runtime and
-changes nothing outside `/userdata/d200` on the device; `adb reboot` restores the stock UI.
+This project is not affiliated with Ulanzi. It replaces the vendor app at runtime without overwriting the
+vendor firmware. Installed program files live in `/userdata/d200`; the service also writes temporary logs
+and changes runtime display/backlight state. Stop the controlling host (or disconnect the ESP32), then
+reboot the D200 to restore the stock UI.
 
 ## Motivation
 
@@ -22,7 +24,7 @@ ESP32 loads everything onto the device via ADB. See [Two variants](#two-variants
 ## Features
 
 - **No firmware changes**: the vendor firmware stays untouched. `deckd` runs from `/userdata/d200` and
-  the stock app is only stopped while it runs; `adb reboot` brings the original UI back.
+  the stock app is stopped at runtime; stop/disconnect the host and reboot to bring the original UI back.
 - **Custom key images**: set an image or icon per key (file picker or drag and drop), with
   optional text on top (position, size, colour).
 - **Colours**: background and text colours per key, with page-wide defaults you can change in
@@ -39,7 +41,8 @@ ESP32 loads everything onto the device via ADB. See [Two variants](#two-variants
 - **Runs unattended**: `deck serve` brings the device up via `adb`, reconnects after replugging
   and reloads the configuration when it changes; an optional systemd user unit starts it at
   login.
-- **Local by default**: the web UI listens on `127.0.0.1` only, because it can configure commands.
+- **Linux host local by default**: its web UI listens on `127.0.0.1` only, because it can configure commands.
+  The ESP32 serves the UI on your WiFi network.
 
 ## Two variants
 
@@ -55,7 +58,7 @@ is the program that stores the configuration, draws the keys and reacts to key p
 | Shell commands | key actions and variables (`sh -c`) | not available (nothing to run them on) |
 | Live values | shell commands, clock | MQTT variables, clock |
 | MQTT | yes | yes |
-| Images and text | rendered by Python | rendered by the firmware (same font and layout) |
+| Images and text | browser for static images, Python for dynamic keys | browser for static images, firmware for dynamic keys (same font/layout) |
 | Python library | yes ([docs/python-library.md](docs/python-library.md)) | no |
 | Autostart | systemd user unit | boots with the power |
 | Security | no authentication yet, keep it on `127.0.0.1` | no authentication yet, anyone in your WiFi can use the UI; MQTT password is stored unencrypted in flash |
@@ -64,7 +67,9 @@ is the program that stores the configuration, draws the keys and reacts to key p
 Pick the Linux host if you want shell commands on key presses or live values from your system.
 Pick the ESP32 if the deck should work without a computer, for example as a home automation panel
 driven by MQTT. Configurations are exchanged as JSON export/import, but features that exist on only
-one side (such as `command` variables) do not work on the other.
+one side (such as `command` variables) do not work on the other. Images are separate from the JSON export.
+The ESP32 accepts configurations up to 64 KiB and at most 16 MQTT variables; see
+[its limits and setup](esp32/README.md#esp32-limits-and-recovery).
 
 ## Preview
 
@@ -94,16 +99,17 @@ deck serve          # starts deckd on the device via adb, draws the keys, serves
 ```
 
 Open <http://127.0.0.1:7280/> to configure the keys. `deck serve` stops the vendor app,
-installs and starts `deckd` on the device and reconnects after replugging. Nothing
-outside `/userdata/d200` is changed on the device; `adb reboot` restores the stock UI.
+installs and starts `deckd` on the device and reconnects after replugging. The vendor firmware is not overwritten.
+Stop `deck serve` (including its systemd unit, if enabled), then reboot the D200 to restore the stock UI.
 To start it at login, enable the systemd user unit written by `install.sh`. See
 `host/README.md` for the CLI, configuration format and autostart.
 
 ## Security
 
-The web configurator can define shell commands, so treat access to it like a shell
-on the host. There is **no authentication yet**; a password feature is planned.
-Until then:
+The following local-access and shell-command guidance applies to the **Linux host**. Its web configurator
+can define shell commands, so treat access to it like a shell on the host. There is **no authentication yet**;
+a password feature is planned. The ESP32 is network-accessible and has no shell actions; see
+[ESP32 security](esp32/README.md#security) for its access controls and credential storage. Until then:
 
 - **Keep the web UI on `127.0.0.1`** (the default). Anyone who can open it can run
   commands as the user running `deck serve`: key commands run on a key press, and
@@ -112,7 +118,7 @@ Until then:
 - **Other local users** of the same machine can reach `127.0.0.1:7280` as well. Do not run
   `deck serve` on a shared machine. For remote access use an SSH tunnel instead of
   exposing the port.
-- **Websites cannot reach it**: the API only answers requests with the expected `Host`
+- **Browser request protection**: the API only answers requests with the expected `Host`
   header (protects against DNS rebinding) and requires the header `X-Deck-Request: 1` on
   changing requests (see `docs/web-api.md`).
 - **The TEST tab never runs commands**; it only logs them. Device and page actions do run.
@@ -163,8 +169,8 @@ uv run ruff check . && uv run mypy              # lint and type check
 Run them from the repository root:
 
 ```sh
-cd host && uv run pytest                                            # host and web UI tests
-cd device && cargo test --target x86_64-unknown-linux-gnu           # device tests, run on your PC
+(cd host && uv run pytest)                                         # host and web UI tests
+(cd device && cargo test --target x86_64-unknown-linux-gnu)          # device tests, run on your PC
 ```
 
 The device tests run on your PC (x86_64), not on the D200, which is why the target is given.

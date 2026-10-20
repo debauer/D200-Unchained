@@ -23,12 +23,18 @@ export function bindIO(ctx) {
     const file = e.target.files[0];
     e.target.value = "";
     if (!file) return;
+    const wasInert = document.body.inert;
+    document.body.inert = true;
     try {
-      await api.putConfig(JSON.parse(await file.text()));
+      const imported = JSON.parse(await file.text());
+      await ctx.flush();
+      await api.putConfig(imported);
       await ctx.reload();
       ctx.toast("Config imported (key images are not part of the file)");
     } catch (err) {
       ctx.toast(`Import failed: ${err.message}`, true);
+    } finally {
+      document.body.inert = wasInert;
     }
   });
   let timer;

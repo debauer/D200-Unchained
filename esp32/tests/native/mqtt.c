@@ -22,6 +22,8 @@ int main(void) {
     json("{\"t\":21.5,\"n\":3,\"z\":null}", "t", "21.5");
     json("{\"t\":21.5,\"n\":3,\"z\":null}", "n", "3");
     json("{\"t\":21.5,\"n\":3,\"z\":null}", "z", "");
+    json("{\"n\":1e100}", "n", "1e+100");
+    json("{\"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\":7}", "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz", "7");
     json("{\"a\":{\"b\":1}}", "a", "!");        /* an object is no scalar */
     json("{\"a\":1}", "b", "!");                /* missing */
     json("{\"a\":[1]}", "a.x", "!");            /* not an index */

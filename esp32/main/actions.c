@@ -62,18 +62,18 @@ static void navigate(const cJSON *config, const char *type, const cJSON *action,
     snprintf(detail, size, "<- %s", page_name(config, parent->valuestring, name, sizeof name));
 }
 
-static void backlight(const char *type, char *detail, size_t size)
+static bool backlight(const char *type, char *detail, size_t size)
 {
     device_state_t s;
-    device_snapshot(&s);
-    int level = s.brightness;
-    bool on = s.display_on;
-    if (strcmp(type, "bl_up") == 0) level = level + STEP > 255 ? 255 : level + STEP;
-    else if (strcmp(type, "bl_down") == 0) level = level - STEP < 0 ? 0 : level - STEP;
-    else on = strcmp(type, "disp_on") == 0;
-    device_set_backlight(level, on);
-    if (on) snprintf(detail, size, "backlight %d%%", (level * 100 + 127) / 255);
+    int delta = !strcmp(type, "bl_up") ? STEP : !strcmp(type, "bl_down") ? -STEP : 0;
+    int display = !strcmp(type, "disp_on") ? 1 : !strcmp(type, "disp_off") ? 0 : -1;
+    if (!device_adjust_backlight(delta, display, &s)) {
+        snprintf(detail, size, "! device is unreachable");
+        return false;
+    }
+    if (s.display_on) snprintf(detail, size, "backlight %d%%", (s.brightness * 100 + 127) / 255);
     else snprintf(detail, size, "display off");
+    return true;
 }
 
 /* Publishes the key's message; in the web UI's TEST mode it is only reported. Starts the line with '!' on failure. */
@@ -114,8 +114,7 @@ bool actions_run(unsigned index, const char *page, bool test)
             ran = publish(action, test, detail, sizeof detail);
         } else if (strcmp(t, "bl_up") == 0 || strcmp(t, "bl_down") == 0 || strcmp(t, "disp_on") == 0 ||
                    strcmp(t, "disp_off") == 0) {
-            backlight(t, detail, sizeof detail);
-            ran = true;
+            ran = backlight(t, detail, sizeof detail);
         } else {
             snprintf(detail, sizeof detail, "! %s not supported on this host", t);
             ESP_LOGW(TAG, "key %u: action type \"%s\" is not supported on this host, ignored", index, t);

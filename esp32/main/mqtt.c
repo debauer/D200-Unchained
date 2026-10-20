@@ -26,6 +26,7 @@ typedef struct {
 } variable_t;
 
 static SemaphoreHandle_t s_lock;
+static SemaphoreHandle_t s_client_lock; /* Never taken by callbacks from the MQTT task. */
 static mqtt_settings_t s_settings;
 static esp_mqtt_client_handle_t s_client;
 static variable_t s_vars[MAX_VARS];
@@ -37,9 +38,12 @@ static char s_error[64];
 
 char *mqtt_json(void)
 {
-    cJSON *o = mqtt_settings_public(&s_settings);
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    mqtt_settings_t settings = s_settings;
+    xSemaphoreGive(s_lock);
+    cJSON *o = mqtt_settings_public(&settings);
     if (!o) return NULL;
-    cJSON_AddBoolToObject(o, "enabled", s_settings.host[0] != 0);
+    cJSON_AddBoolToObject(o, "enabled", settings.host[0] != 0);
     cJSON_AddBoolToObject(o, "connected", s_connected);
     cJSON_AddStringToObject(o, "error", s_error);
     char *text = cJSON_PrintUnformatted(o);
@@ -104,9 +108,14 @@ static void on_message(const char *topic, size_t topic_len, const char *data, si
 
 static void subscribe_all(void)
 {
+    char (*topics)[TOPIC_SIZE] = malloc(MAX_VARS * TOPIC_SIZE);
+    if (!topics) { ESP_LOGE(TAG, "cannot subscribe: out of memory"); return; }
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    for (int i = 0; i < s_var_count; i++) esp_mqtt_client_subscribe(s_client, s_vars[i].topic, 0);
+    int count = s_var_count;
+    for (int i = 0; i < count; i++) strcpy(topics[i], s_vars[i].topic);
     xSemaphoreGive(s_lock);
+    for (int i = 0; i < count; i++) esp_mqtt_client_subscribe(s_client, topics[i], 0);
+    free(topics);
 }
 
 static const char *refusal(int code)
@@ -182,12 +191,15 @@ static void connect(void)
 void mqtt_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
+    s_client_lock = xSemaphoreCreateMutex();
 }
 
 void mqtt_start(void)
 {
     mqtt_settings_load(&s_settings);
+    xSemaphoreTake(s_client_lock, portMAX_DELAY);
     connect();
+    xSemaphoreGive(s_client_lock);
 }
 
 const char *mqtt_update(const char *body)
@@ -196,12 +208,14 @@ const char *mqtt_update(const char *body)
     const char *problem = mqtt_settings_apply(&next, body);
     if (problem) return problem;
     if (!mqtt_settings_save(&next)) return "cannot store the settings";
+    xSemaphoreTake(s_client_lock, portMAX_DELAY);
     disconnect();
     xSemaphoreTake(s_lock, portMAX_DELAY);
     s_settings = next;
     for (int i = 0; i < s_var_count; i++) s_vars[i].has_value = false; /* values of the old broker */
     xSemaphoreGive(s_lock);
     connect();
+    xSemaphoreGive(s_client_lock);
     publish_state();
     values_changed();
     return NULL;
@@ -217,8 +231,12 @@ static void copy_field(char *out, size_t size, const cJSON *v, const char *field
 
 void mqtt_configure(const cJSON *config)
 {
-    variable_t *next = malloc(sizeof *next * MAX_VARS); /* too big for the stack of the main task */
-    if (!next) return;
+    variable_t *next = calloc(MAX_VARS * 2, sizeof *next); /* snapshots must not live on the task stack */
+    if (!next) {
+        ESP_LOGE(TAG, "cannot configure MQTT variables: out of memory");
+        return;
+    }
+    variable_t *old = next + MAX_VARS;
     int count = 0;
     const cJSON *v;
     cJSON_ArrayForEach(v, cJSON_GetObjectItem(config, "variables")) {
@@ -233,10 +251,11 @@ void mqtt_configure(const cJSON *config)
     }
     bool changed = false;
     xSemaphoreTake(s_lock, portMAX_DELAY);
+    int old_count = s_var_count;
+    memcpy(old, s_vars, sizeof s_vars);
     for (int i = 0; i < s_var_count; i++) { /* topics nobody reads any more */
         bool used = false;
         for (int j = 0; j < count; j++) used = used || strcmp(next[j].topic, s_vars[i].topic) == 0;
-        if (!used && s_connected) esp_mqtt_client_unsubscribe(s_client, s_vars[i].topic);
         changed = changed || (!used && s_vars[i].has_value);
     }
     for (int j = 0; j < count; j++) {
@@ -247,14 +266,24 @@ void mqtt_configure(const cJSON *config)
             strcpy(next[j].value, s_vars[i].value);
             next[j].has_value = s_vars[i].has_value;
         }
-        bool subscribed = false;
-        for (int i = 0; i < s_var_count; i++) subscribed = subscribed || strcmp(next[j].topic, s_vars[i].topic) == 0;
-        if (s_connected && !subscribed) esp_mqtt_client_subscribe(s_client, next[j].topic, 0);
         changed = changed || !known;
     }
     memcpy(s_vars, next, (size_t)count * sizeof next[0]);
     s_var_count = count;
     xSemaphoreGive(s_lock);
+    /* The MQTT task holds its own API lock while invoking callbacks. Do not acquire it while holding s_lock. */
+    if (s_connected) {
+        for (int i = 0; i < old_count; i++) {
+            bool used = false;
+            for (int j = 0; j < count; j++) used = used || !strcmp(old[i].topic, next[j].topic);
+            if (!used) esp_mqtt_client_unsubscribe(s_client, old[i].topic);
+        }
+        for (int j = 0; j < count; j++) {
+            bool known = false;
+            for (int i = 0; i < old_count; i++) known = known || !strcmp(old[i].topic, next[j].topic);
+            if (!known) esp_mqtt_client_subscribe(s_client, next[j].topic, 0);
+        }
+    }
     free(next);
     if (changed) values_changed();
 }
@@ -262,6 +291,10 @@ void mqtt_configure(const cJSON *config)
 const char *mqtt_publish(const char *topic, const char *payload, int qos, bool retain)
 {
     if (!topic[0]) return "topic not set";
-    if (!s_client || !s_connected) return s_settings.host[0] ? "mqtt is not connected" : "mqtt is not configured";
-    return esp_mqtt_client_enqueue(s_client, topic, payload, 0, qos, retain, true) < 0 ? "mqtt publish failed" : NULL;
+    xSemaphoreTake(s_client_lock, portMAX_DELAY);
+    const char *error = NULL;
+    if (!s_client || !s_connected) error = s_settings.host[0] ? "mqtt is not connected" : "mqtt is not configured";
+    else if (esp_mqtt_client_enqueue(s_client, topic, payload, 0, qos, retain, true) < 0) error = "mqtt publish failed";
+    xSemaphoreGive(s_client_lock);
+    return error;
 }

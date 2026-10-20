@@ -87,14 +87,16 @@ export class Autosave {
     if (!config().pages.some((p) => p.id === page)) return; // page deleted meanwhile
     const s = slot(page, i);
     if (s.iconDirty) {
-      if (s.icon) await api.putIcon(page, i, s.icon);
+      const icon = s.icon;
+      if (icon) await api.putIcon(page, i, icon);
       else await api.deleteIcon(page, i);
-      s.iconDirty = false;
+      if (s.icon === icon) s.iconDirty = false;
     }
     if (s.altDirty) {
-      if (s.alt) await api.putAltIcon(page, i, s.alt);
+      const alt = s.alt;
+      if (alt) await api.putAltIcon(page, i, alt);
       else await api.deleteAltIcon(page, i);
-      s.altDirty = false;
+      if (s.alt === alt) s.altDirty = false;
     }
     if (s.image && !s.dynamic) {
       const stored = await api.putImage(page, i, s.image);

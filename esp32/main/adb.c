@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -45,12 +46,24 @@ static esp_err_t bulk(adb_t *a, uint8_t ep, const void *head, size_t head_len, v
     x->device_handle = a->dev;
     x->bEndpointAddress = ep;
     x->num_bytes = head_len + len;
-    x->timeout_ms = XFER_TIMEOUT_MS; /* not enforced by the IDF USB host (documented as unsupported) */
+    x->timeout_ms = 0; /* IDF does not implement this field; the semaphore wait enforces our deadline. */
     x->callback = xfer_done;
     x->context = a->done;
     err = usb_host_transfer_submit(x);
     if (err == ESP_OK) {
-        xSemaphoreTake(a->done, portMAX_DELAY);
+        if (xSemaphoreTake(a->done, pdMS_TO_TICKS(XFER_TIMEOUT_MS)) != pdTRUE) {
+            ESP_LOGW(TAG, "transfer on ep 0x%02x timed out, cancelling", ep);
+            esp_err_t halted = usb_host_endpoint_halt(a->dev, ep);
+            esp_err_t flushed = usb_host_endpoint_flush(a->dev, ep);
+            if (halted != ESP_OK || flushed != ESP_OK) ESP_LOGW(TAG, "cancel: halt=%s flush=%s", esp_err_to_name(halted), esp_err_to_name(flushed));
+            /* Never release the interface or reuse a transfer until its completion callback has run. */
+            if (xSemaphoreTake(a->done, pdMS_TO_TICKS(XFER_TIMEOUT_MS)) != pdTRUE) {
+                ESP_LOGE(TAG, "USB cancellation did not complete; restarting to release DMA safely");
+                esp_restart();
+            }
+            a->broken = true;
+            return ESP_ERR_TIMEOUT;
+        }
         if (x->status != USB_TRANSFER_STATUS_COMPLETED) {
             ESP_LOGW(TAG, "transfer on ep 0x%02x: status %d (%u of %u bytes)", ep, x->status,
                      (unsigned)x->actual_num_bytes, (unsigned)(head_len + len));

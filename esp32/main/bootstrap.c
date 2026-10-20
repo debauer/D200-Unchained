@@ -7,10 +7,11 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "mbedtls/sha256.h"
 
 static const char *TAG = "bootstrap";
 
-/* deckd for the device, embedded at build time (scripts/deckd.py writes deckd_blob.S) */
+/* deckd for the device, embedded by scripts/embed.py in blobs.S. */
 extern const uint8_t deckd_start[] ;
 extern const uint8_t deckd_end[] ;
 
@@ -57,17 +58,13 @@ static esp_err_t stop_vendor(adb_t *a, char *out, size_t cap)
     return ESP_FAIL;
 }
 
-/* Size of the installed deckd, or -1 when it is missing. `ls -l` prints: mode links owner group size ... */
-static long installed_size(adb_t *a, char *out, size_t cap)
+static bool binary_matches(adb_t *a, const char *hash, bool running, char *out, size_t cap)
 {
-    if (adb_exec(a, "shell:ls -l " DEVICE_BINARY " 2>/dev/null", out, cap) != ESP_OK) return -1;
-    if (!strstr(out, DEVICE_BINARY)) return -1;
-    char *p = out;
-    for (int field = 0; field < 4; field++) {
-        while (*p && *p != ' ') p++;
-        while (*p == ' ') p++;
-    }
-    return *p >= '0' && *p <= '9' ? strtol(p, NULL, 10) : -1;
+    const char *command = running ? "shell:p=$(pidof deckd); case \"$p\" in ''|*' '*) echo invalid;; "
+                                    "*) sha256sum /proc/$p/exe 2>/dev/null;; esac"
+                                 : "shell:sha256sum " DEVICE_BINARY " 2>/dev/null";
+    if (adb_exec(a, command, out, cap) != ESP_OK) return false;
+    return strlen(out) >= 65 && strncmp(out, hash, 64) == 0 && out[64] == ' ';
 }
 
 /* The device's own view of what happened on the USB gadget: kernel log lines, one log line each. */
@@ -131,6 +128,10 @@ static void wake_framebuffer(adb_t *a, char *out, size_t cap)
 esp_err_t bootstrap_deckd(adb_t *a)
 {
     const size_t size = deckd_end - deckd_start;
+    uint8_t digest[32];
+    char hash[65];
+    if (mbedtls_sha256(deckd_start, size, digest, 0) != 0) return ESP_FAIL;
+    for (size_t i = 0; i < sizeof digest; i++) snprintf(hash + 2 * i, 3, "%02x", digest[i]);
     char *out = malloc(512);
     if (!out) return ESP_ERR_NO_MEM;
     esp_err_t err = ESP_FAIL;
@@ -151,9 +152,11 @@ esp_err_t bootstrap_deckd(adb_t *a)
 #endif
     bool up = deckd_listening(a, out, 512);
     if (LINK_LOST(a)) goto lost;
-    long installed = installed_size(a, out, 512);
+    bool installed = binary_matches(a, hash, false, out, 512);
     if (LINK_LOST(a)) goto lost;
-    if (up && installed == (long)size) { /* a running deckd of another build is replaced below */
+    bool running = up && installed && binary_matches(a, hash, true, out, 512);
+    if (LINK_LOST(a)) goto lost;
+    if (running) {
         ESP_LOGI(TAG, "deckd already listens on port %d", DECKD_PORT);
         wake_framebuffer(a, out, 512);
         err = LINK_LOST(a) ? ESP_FAIL : ESP_OK;
@@ -162,13 +165,18 @@ esp_err_t bootstrap_deckd(adb_t *a)
 #endif
         goto done;
     }
-    if (installed != (long)size) {
+    adb_exec(a, "shell:killall deckd 2>/dev/null; mkdir -p /userdata/d200", out, 512);
+    if (LINK_LOST(a)) goto lost;
+    if (!installed) {
         ESP_LOGI(TAG, "installing deckd (%u bytes)", (unsigned)size);
-        adb_exec(a, "shell:killall deckd 2>/dev/null; mkdir -p /userdata/d200", out, 512);
-        if (LINK_LOST(a)) goto lost;
         err = adb_push(a, deckd_start, size, DEVICE_BINARY, 0100755);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "push failed");
+            goto done;
+        }
+        if (!binary_matches(a, hash, false, out, 512)) {
+            ESP_LOGE(TAG, "installed deckd checksum does not match");
+            err = ESP_FAIL;
             goto done;
         }
     }

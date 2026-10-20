@@ -46,6 +46,11 @@ If the path does not exist, the key shows `!`. Values are cut at 64 characters.
 All `mqtt` variables are subscribed at once, whichever page is shown, so a page shows current
 values as soon as you open it.
 
+On ESP32, configuration validation allows at most 16 MQTT variables, topics up to 128 bytes and JSON paths up to
+64 bytes. Values are limited to 64 UTF-8 bytes. Its 2048-byte receive buffer includes MQTT/topic overhead;
+messages delivered in fragments are logged and ignored. Broker settings live in the unencrypted `storage`
+partition, not in a Linux user directory. See [esp32/README.md](../esp32/README.md).
+
 ## Colour rules
 
 A key can change its colours depending on a variable. In the key editor, under **Colour rules**,

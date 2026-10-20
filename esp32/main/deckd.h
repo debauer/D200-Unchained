@@ -28,13 +28,14 @@ typedef struct {
     uint32_t remote;           /* remote stream id */
     int okay;                  /* the device acknowledged our last WRTE */
     int closed;
-    uint8_t rx[DECKD_REPLY_MAX]; /* received stream bytes not yet parsed into frames */
+    uint8_t rx[DECKD_REPLY_MAX + ADB_MAX_DATA]; /* one partial reply plus one incoming ADB payload */
     size_t rx_len;
     uint8_t tx[ADB_MAX_DATA];  /* header + first payload bytes of a frame */
     void (*on_key)(uint16_t index, bool pressed); /* KEY_EVENTs that arrive between replies */
 } deckd_t;
 
 esp_err_t deckd_open(deckd_t *d, adb_t *a);
+esp_err_t deckd_close(deckd_t *d);
 
 /* Sends one command and waits for its reply (KEY_EVENTs in between are passed to `on_key`, may be NULL).
  * The reply payload lands in `reply` (cap bytes); *type and *len describe it. */

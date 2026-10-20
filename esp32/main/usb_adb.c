@@ -1,6 +1,7 @@
 #include "usb_adb.h"
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_log.h"
@@ -66,8 +67,15 @@ static esp_err_t session(adb_t *a, uint8_t address)
             result = ESP_OK;
 #ifdef CONFIG_D200_SELFTEST
             deckd_t *t = malloc(sizeof *t);
-            if (t && deckd_selftest(t, a) != ESP_OK) ESP_LOGE(TAG, "deckd self test failed");
+            esp_err_t test = t ? deckd_selftest(t, a) : ESP_ERR_NO_MEM;
+            if (test == ESP_OK) test = deckd_close(t);
             free(t);
+            if (test != ESP_OK) {
+                ESP_LOGE(TAG, "deckd self test failed: %s", esp_err_to_name(test));
+                usb_host_interface_release(a->client, a->dev, a->iface);
+                usb_host_device_close(a->client, a->dev);
+                return test;
+            }
 #endif
             device_run(a); /* returns when the link breaks */
             result = s_attached ? ESP_FAIL : ESP_OK; /* still attached: the link broke, start over */

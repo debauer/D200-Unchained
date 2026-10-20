@@ -18,12 +18,36 @@ static void put_u16(uint8_t *p, unsigned v) { p[0] = v; p[1] = v >> 8; }
 static void put_u32(uint8_t *p, uint32_t v) { p[0] = v; p[1] = v >> 8; p[2] = v >> 16; p[3] = v >> 24; }
 static uint32_t get_u32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
 
+static esp_err_t dispatch_keys(deckd_t *d)
+{
+    size_t offset = 0;
+    while (d->rx_len - offset >= FRAME_HEADER) {
+        uint8_t *frame = d->rx + offset;
+        size_t length = get_u32(frame + 1);
+        if (length > DECKD_REPLY_MAX - FRAME_HEADER) return ESP_ERR_INVALID_SIZE;
+        size_t size = FRAME_HEADER + length;
+        if (d->rx_len - offset < size) break;
+        if (frame[0] != DECKD_KEY_EVENT) {
+            offset += size;
+            continue;
+        }
+        if (length != 3) return ESP_ERR_INVALID_SIZE;
+        uint16_t index = frame[5] | frame[6] << 8;
+        bool pressed = frame[7] != 0;
+        d->rx_len -= size;
+        memmove(frame, frame + size, d->rx_len - offset);
+        if (d->on_key) d->on_key(index, pressed);
+    }
+    return ESP_OK;
+}
+
 /* Handles one ADB message of the stream: acknowledgements and incoming data. */
 static esp_err_t pump(deckd_t *d)
 {
     adb_msg_t m;
     esp_err_t err = adb_recv_msg(d->adb, &m);
     if (err != ESP_OK) return err;
+    if (m.arg1 != LOCAL_ID || (d->remote && m.arg0 != d->remote)) return ESP_ERR_INVALID_RESPONSE;
     if (m.command == A_OKAY) {
         d->remote = m.arg0;
         d->okay = 1;
@@ -35,6 +59,7 @@ static esp_err_t pump(deckd_t *d)
         memcpy(d->rx + d->rx_len, d->adb->buf, m.length);
         d->rx_len += m.length;
         err = adb_send_msg(d->adb, A_OKAY, LOCAL_ID, m.arg0, NULL, 0);
+        if (err == ESP_OK) err = dispatch_keys(d);
     } else if (m.command == A_CLSE) {
         d->closed = 1;
         return ESP_FAIL;
@@ -51,6 +76,14 @@ esp_err_t deckd_open(deckd_t *d, adb_t *a)
     return err;
 }
 
+esp_err_t deckd_close(deckd_t *d)
+{
+    if (d->closed || !d->remote) return ESP_OK;
+    esp_err_t err = adb_send_msg(d->adb, A_CLSE, LOCAL_ID, d->remote, NULL, 0);
+    while (err == ESP_OK && !d->closed) err = pump(d);
+    return d->closed ? ESP_OK : err;
+}
+
 static esp_err_t write_chunk(deckd_t *d, const void *data, size_t len)
 {
     d->okay = 0;
@@ -65,7 +98,7 @@ static esp_err_t send_frame(deckd_t *d, uint8_t type, const uint8_t *payload, si
     d->tx[0] = type;
     put_u32(d->tx + 1, len);
     size_t first = len < ADB_MAX_DATA - FRAME_HEADER ? len : ADB_MAX_DATA - FRAME_HEADER;
-    memcpy(d->tx + FRAME_HEADER, payload, first);
+    if (first) memcpy(d->tx + FRAME_HEADER, payload, first);
     esp_err_t err = write_chunk(d, d->tx, FRAME_HEADER + first);
     for (size_t off = first; err == ESP_OK && off < len; off += ADB_MAX_DATA) {
         size_t take = len - off < ADB_MAX_DATA ? len - off : ADB_MAX_DATA;

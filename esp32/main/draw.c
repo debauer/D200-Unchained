@@ -59,6 +59,7 @@ static uint8_t *load_image(const cJSON *key, const device_key_t *window)
 esp_err_t draw_page(deckd_t *d, const device_state_t *state, uint32_t keys, bool clear)
 {
     cJSON *config = config_parse();
+    if (!config) return ESP_FAIL;
     uint8_t background[3] = {0, 0, 0}, color[3];
     if (config) parse_color(cJSON_GetObjectItem(config, "background"), background);
     const cJSON *page = config ? config_find_page(config, state->page) : NULL;

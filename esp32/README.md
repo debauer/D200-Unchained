@@ -1,20 +1,46 @@
 # ESP32-S3 host (work in progress)
 
 An ESP32-S3 replaces the Linux host: it is the USB host of the D200, talks to it over ADB and
-serves the same web interface (`../host/src/d200_deck/web/static/`, flashed unchanged as the
-read-only `www` partition) and the same web API (`../docs/web-api.md`).
+serves the shared web interface (`../host/src/d200_deck/web/static/`, flashed unchanged as the
+read-only `www` partition). The common HTTP contract is in [web-api.md](../docs/web-api.md);
+supported action and variable types are advertised by `/api/info`.
 
-Current state: WiFi, web server with the shared UI, `/api/info` stub, USB enumeration of the D200
-the bootstrap (stops the vendor app, pushes the embedded `deckd` to the D200 if needed and starts it) and a
+Current state: WiFi with automatic reconnect, web server with the shared UI, USB enumeration of the D200,
+the bootstrap (stops the vendor app, compares SHA-256 hashes, pushes the embedded `deckd` if needed and starts it) and a
 `deckd` client. The web API serves `/api/info` with the real key windows, `/api/events` (key presses, status), and
 stores the configuration (`/api/config`). Key images and icons are stored and drawn (the web UI composes them in the browser). Key actions run on the device (backlight
 -/+, display on/off, page, back; `POST .../press` in the TEST tab, `POST /api/page`). Keys with `{time}`/`{date}`
 placeholders and the info window's clock are drawn by the firmware itself (stb_truetype with Chakra Petch, converted
-from the web interface's woff2 at build time) and refreshed every minute. MQTT works as in [docs/mqtt.md](../docs/mqtt.md)
+from the web interface's woff2 at build time) and refreshed every minute. MQTT follows [docs/mqtt.md](../docs/mqtt.md)
 (esp-mqtt): broker settings in the web UI, `mqtt` variables with JSON path, the `mqtt` publish action and colour
 rules with the second image. The broker settings are stored in plain text in the `storage` partition (`mqtt.json`;
 flash is not encrypted); the web API never returns the password. Not done: variables of type `command` (no source on
-this host, they show `?`), `http`.
+this host, they show `?`), `http`. Unknown action and variable types survive configuration round trips but are
+not executed/read. Version-1 configurations are converted to version 2 on load/import.
+
+### ESP32 limits and recovery
+
+- Configurations: at most 64 KiB per API upload, 14 keys per page, page IDs up to 32 characters.
+- At most 16 MQTT variables, topics up to 128 bytes and JSON paths up to 64 bytes. Configurations exceeding these
+  limits are rejected rather than silently truncated. MQTT values are cut to 64 UTF-8 bytes.
+- The MQTT receive buffer is 2048 bytes, including protocol/topic overhead. Messages delivered in fragments are
+  logged and ignored; keep payloads comfortably below this size.
+- Static key images are composed in the browser; keys with placeholders, matching rules and the clock are drawn
+  by the firmware. Key images are stored separately and are not included in configuration JSON exports.
+- WLAN retries continue with backoff (up to 60 seconds), including when the access point is unavailable at boot.
+  USB operation does not depend on WLAN.
+- USB transfers time out after 3 seconds and are cancelled before their buffers are reused. If cancellation itself
+  does not complete within another 3 seconds, the ESP32 restarts to avoid reusing an in-flight DMA buffer.
+- To restore the stock D200 UI, disconnect the ESP32's USB-OTG connection and reboot the D200. While the ESP32 stays
+  attached, the next bootstrap stops the stock app again.
+
+### Security
+
+There is no authentication: anyone who can reach the ESP32 on your network can configure it. Open the UI by its
+numeric IPv4 address (`http://<ip>/`); other Host headers are rejected to prevent DNS rebinding. Changing API
+requests also require `X-Deck-Request: 1`. WLAN credentials are embedded in the firmware and stored by ESP-IDF in
+NVS, and the MQTT password is stored in plaintext in `storage`. Flash is not encrypted. The API/export never
+returns the MQTT password. Keep the device on a trusted network.
 
 Key images go to `deckd` run-length coded (protocol 5, `format 2`; flat areas and text shrink by a factor of 10 to 30,
 photos stay as they are), and the USB transfers are reused instead of allocated per block. The menu item
@@ -29,8 +55,9 @@ powered; check them against the schematic of your board revision. The flash layo
 
 ## Requirements
 
-- **PSRAM** (ESP32-S3 with octal PSRAM, e.g. N8R8/N16R8): the renderer needs a few hundred KB for the wide
+- **16 MB flash and 8 MB octal PSRAM** (N16R8): the renderer needs a few hundred KB for the wide
   info window. `sdkconfig.defaults` turns it on; a board without it will not start.
+  N8R8 has PSRAM but only 8 MB flash and does not fit the current partition table.
 - The time zone for the clock is a menu item (`D200 host`), default Central Europe.
 - `sdkconfig.defaults` only applies to a fresh `sdkconfig.esp32s3`: after it changes, delete that file or change the
   setting in `menuconfig`.
@@ -40,7 +67,7 @@ powered; check them against the schematic of your board revision. The flash layo
 ## Build and flash
 
 The firmware embeds `deckd`. Build it first (`../install.sh`, or `cargo build --release --target
-armv7-unknown-linux-musleabihf` in `../device`); `scripts/deckd.py` looks for it there and in
+armv7-unknown-linux-musleabihf` in `../device`); `scripts/embed.py` looks for it there and in
 `~/.local/share/deck/deckd`, `DECKD_BINARY=<file>` overrides.
 
 [PlatformIO](https://platformio.org/) with the ESP-IDF framework, installed by uv (Python 3.10-3.13):
@@ -54,7 +81,11 @@ uv run pio run -t uploadfs        # web UI (../host/src/d200_deck/web/static) in
 uv run pio device monitor         # log, on the COM port
 ```
 
-`scripts/test.sh` runs the tests of the portable code (renderer, placeholders) on the PC.
+`scripts/test.sh` runs native tests on the PC: configuration validation/migration and storage, ADB sync and
+transfer cancellation (mocked USB), deckd frame handling, Host checks and fragmented HTTP bodies, device state,
+JSON sizing, renderer, placeholders, colour rules, MQTT and RLE. It needs `gcc`, pthreads and one `uv run pio run`
+first to convert the fonts and fetch ESP-IDF's cJSON sources. `PLATFORMIO_CORE_DIR` and `CJSON_DIR` can override
+the source lookup. These tests and a successful firmware build do not replace an on-device reconnect/flash test.
 
 `scripts/run.sh` does upload and monitor in one go and also writes the output to files
 (`logs/latest.log` for the monitor, `logs/upload.log` for build and upload; `--seconds 60`, `--no-upload`,

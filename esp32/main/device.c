@@ -1,6 +1,5 @@
 #include "device.h"
 
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,7 +19,7 @@
 #include "usb_adb.h"
 
 static const char *TAG = "device";
-#define START_BRIGHTNESS 200
+#define START_BRIGHTNESS 255
 #define PING_MS 100
 
 static device_state_t s_state = {.brightness = START_BRIGHTNESS, .display_on = true, .page = "root"};
@@ -60,6 +59,10 @@ void device_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
     default_layout(&s_state);
+    cJSON *config = config_parse();
+    if (config) s_state.brightness = cJSON_GetObjectItem(config, "brightness")->valueint;
+    else ESP_LOGE(TAG, "cannot load the configuration");
+    cJSON_Delete(config);
 }
 
 bool device_key_window(unsigned index, device_key_t *out)
@@ -82,76 +85,46 @@ void device_snapshot(device_state_t *out)
     xSemaphoreGive(s_lock);
 }
 
-static int percent(int level)
+static void backlight_event(void)
 {
-    return (level * 100 + 127) / 255;
+    char json[96];
+    device_event_json("brightness", json, sizeof json);
+    events_publish("brightness", json);
 }
-
-static size_t append(char *out, size_t size, size_t used, const char *fmt, ...) __attribute__((format(printf, 4, 5)));
-static size_t append(char *out, size_t size, size_t used, const char *fmt, ...)
-{
-    if (used >= size) return used;
-    va_list args;
-    va_start(args, fmt);
-    int n = vsnprintf(out + used, size - used, fmt, args);
-    va_end(args);
-    return n < 0 ? used : used + (size_t)n;
-}
-
-size_t device_info_json(char *out, size_t size)
-{
-    device_state_t s;
-    device_snapshot(&s);
-    size_t n = append(out, size, 0,
-                      "{\"api\":1,\"host\":\"esp32\",\"log\":true,\"connected\":%s,\"screen\":{\"width\":%u,\"height\":%u},\"keys\":[",
-                      s.connected ? "true" : "false", s.screen_width ? s.screen_width : 1280,
-                      s.screen_height ? s.screen_height : 720);
-    for (int i = 0; i < s.key_count; i++) {
-        n = append(out, size, n, "%s{\"index\":%u,\"code\":%u,\"x\":%u,\"y\":%u,\"width\":%u,\"height\":%u}", i ? "," : "",
-                   s.keys[i].index, s.keys[i].code, s.keys[i].x, s.keys[i].y, s.keys[i].width, s.keys[i].height);
-    }
-    char *values = device_values_json(), storage[72] = "";
-    size_t total, used;
-    if (config_storage(&total, &used)) snprintf(storage, sizeof storage, "\"storage\":{\"total\":%u,\"used\":%u},", (unsigned)total, (unsigned)used);
-    n = append(out, size, n,
-               "],%s\"actions\":[\"mqtt\",\"bl_down\",\"bl_up\",\"disp_off\",\"disp_on\",\"page\",\"back\"],"
-               "\"brightness\":{\"level\":%d,\"percent\":%d,\"display_on\":%s},\"page\":\"%s\",\"values\":%s,"
-               "\"variable_types\":[\"mqtt\"]}",
-               storage, s.brightness, percent(s.brightness), s.display_on ? "true" : "false", s.page, values ? values : "{}");
-    free(values);
-    return n;
-}
-
-char *device_values_json(void)
-{
-    cJSON *config = config_parse();
-    char *json = placeholders_values_json(config ? cJSON_GetObjectItem(config, "variables") : NULL);
-    cJSON_Delete(config);
-    return json;
-}
-
-void device_event_json(const char *name, char *out, size_t size)
-{
-    device_state_t s;
-    device_snapshot(&s);
-    if (strcmp(name, "status") == 0) snprintf(out, size, "{\"connected\":%s}", s.connected ? "true" : "false");
-    else if (strcmp(name, "brightness") == 0)
-        snprintf(out, size, "{\"level\":%d,\"percent\":%d,\"display_on\":%s}", s.brightness, percent(s.brightness),
-                 s.display_on ? "true" : "false");
-    else if (strcmp(name, "page") == 0) snprintf(out, size, "{\"page\":\"%s\"}", s.page);
-    else snprintf(out, size, "{}");
-}
-
 void device_set_backlight(int level, bool display_on)
 {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     s_state.brightness = level;
     s_state.display_on = display_on;
-    xSemaphoreGive(s_lock);
     s_brightness_dirty = true;
-    char json[96];
-    device_event_json("brightness", json, sizeof json);
-    events_publish("brightness", json);
+    xSemaphoreGive(s_lock);
+    backlight_event();
+}
+
+void device_set_brightness(int level)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_state.brightness = level;
+    s_brightness_dirty = true;
+    xSemaphoreGive(s_lock);
+    backlight_event();
+}
+
+bool device_adjust_backlight(int delta, int display, device_state_t *out)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    if (!s_state.connected) {
+        xSemaphoreGive(s_lock);
+        return false;
+    }
+    int level = s_state.brightness + delta;
+    s_state.brightness = level < 0 ? 0 : level > 255 ? 255 : level;
+    if (display >= 0) s_state.display_on = display != 0;
+    s_brightness_dirty = true;
+    *out = s_state;
+    xSemaphoreGive(s_lock);
+    backlight_event();
+    return true;
 }
 
 void device_set_page(const char *id)
@@ -246,11 +219,15 @@ esp_err_t device_run(adb_t *a)
         s_redraw_keys = 0;
         portEXIT_CRITICAL(&s_redraw_lock);
         if (s_brightness_dirty) {
+            xSemaphoreTake(s_lock, portMAX_DELAY);
             s_brightness_dirty = false;
-            device_state_t state;
-            device_snapshot(&state);
-            const uint8_t level = state.display_on ? state.brightness : 0;
+            const uint8_t level = s_state.display_on ? s_state.brightness : 0;
+            xSemaphoreGive(s_lock);
             err = deckd_request(d, DECKD_SET_BRIGHTNESS, &level, 1, &type, frame, sizeof frame, &n);
+            if (err == ESP_OK && type != DECKD_OK) {
+                ESP_LOGE(TAG, "deckd refused brightness: %.*s", (int)n, frame);
+                err = ESP_FAIL;
+            }
             if (err != ESP_OK) break;
         }
         if (all || keys) {

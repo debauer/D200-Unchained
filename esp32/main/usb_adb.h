@@ -2,7 +2,7 @@
 
 #include <stdbool.h>
 
-/* USB host side: finds the D200 (ADB interface), connects with ADB and runs a test command. */
+/* USB host: finds the D200, bootstraps deckd over ADB and runs the device client, reconnecting on failure. */
 void usb_adb_start(void);
 
 /* True while a device with an ADB interface is attached. */

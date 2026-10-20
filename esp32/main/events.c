@@ -1,5 +1,6 @@
 #include "events.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,9 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
+#include "lwip/sockets.h"
 
 static const char *TAG = "events";
 #define MAX_CLIENTS 4
@@ -17,6 +21,14 @@ static const char *TAG = "events";
 
 static httpd_req_t *s_clients[MAX_CLIENTS];
 static SemaphoreHandle_t s_lock;
+static QueueHandle_t s_pending;
+static portMUX_TYPE s_overflow_lock = portMUX_INITIALIZER_UNLOCKED;
+static bool s_overflow;
+
+static int send_nonblocking(httpd_handle_t server, int fd, const char *buf, size_t size, int flags)
+{
+    return send(fd, buf, size, flags | MSG_DONTWAIT);
+}
 
 static esp_err_t send_to(httpd_req_t *req, const char *text)
 {
@@ -25,7 +37,11 @@ static esp_err_t send_to(httpd_req_t *req, const char *text)
 
 static void drop(int i)
 {
+    httpd_handle_t server = s_clients[i]->handle;
+    int fd = httpd_req_to_sockfd(s_clients[i]);
+    shutdown(fd, SHUT_RDWR);
     httpd_req_async_handler_complete(s_clients[i]);
+    httpd_sess_trigger_close(server, fd);
     s_clients[i] = NULL;
     ESP_LOGI(TAG, "client %d left", i);
 }
@@ -39,19 +55,51 @@ static void send_all(const char *text)
     xSemaphoreGive(s_lock);
 }
 
+static void enqueue(char *text)
+{
+    if (!text) return;
+    if (xQueueSend(s_pending, &text, 0) != pdTRUE) {
+        free(text);
+        portENTER_CRITICAL(&s_overflow_lock);
+        s_overflow = true;
+        portEXIT_CRITICAL(&s_overflow_lock);
+    }
+}
+
 void events_publish(const char *name, const char *json)
 {
     size_t size = strlen(name) + strlen(json) + 24;
     char *text = malloc(size);
-    if (!text) return;
-    snprintf(text, size, "event: %s\ndata: %s\n\n", name, json);
-    send_all(text);
-    free(text);
+    if (text) snprintf(text, size, "event: %s\ndata: %s\n\n", name, json);
+    enqueue(text);
+}
+
+static void sender(void *arg)
+{
+    char *text;
+    for (;;) {
+        xQueueReceive(s_pending, &text, portMAX_DELAY);
+        portENTER_CRITICAL(&s_overflow_lock);
+        bool overflow = s_overflow;
+        s_overflow = false;
+        portEXIT_CRITICAL(&s_overflow_lock);
+        if (overflow) { /* Reconnect resends a complete snapshot instead of leaving clients with missed state. */
+            xSemaphoreTake(s_lock, portMAX_DELAY);
+            for (int i = 0; i < MAX_CLIENTS; i++) if (s_clients[i]) drop(i);
+            xSemaphoreGive(s_lock);
+            free(text);
+            while (xQueueReceive(s_pending, &text, 0) == pdTRUE) free(text);
+            ESP_LOGW(TAG, "event queue full; clients must resync");
+            continue;
+        }
+        send_all(text);
+        free(text);
+    }
 }
 
 static void keepalive(void *arg)
 {
-    send_all(": keepalive\n\n");
+    enqueue(strdup(": keepalive\n\n"));
 }
 
 /* The current body of the event `name`. free() it. */
@@ -71,6 +119,11 @@ esp_err_t events_handler(httpd_req_t *req)
     if (err != ESP_OK) return err;
     httpd_resp_set_type(copy, "text/event-stream");
     httpd_resp_set_hdr(copy, "Cache-Control", "no-cache");
+    err = httpd_sess_set_send_override(copy->handle, httpd_req_to_sockfd(copy), send_nonblocking);
+    if (err != ESP_OK) {
+        httpd_req_async_handler_complete(copy);
+        return err;
+    }
     xSemaphoreTake(s_lock, portMAX_DELAY);
     int slot = -1;
     for (int i = 0; i < MAX_CLIENTS && slot < 0; i++) {
@@ -106,6 +159,10 @@ esp_err_t events_handler(httpd_req_t *req)
 void events_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
+    s_pending = xQueueCreate(16, sizeof(char *));
+    assert(s_lock && s_pending);
+    BaseType_t task = xTaskCreate(sender, "sse_send", 8192, NULL, 4, NULL);
+    assert(task == pdPASS);
 }
 
 void events_start(void)

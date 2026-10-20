@@ -21,7 +21,8 @@ The API can configure actions that the host executes. Therefore:
 
 - **Served only to allowed hosts**: the `Host` header must match the address the
   service listens on (or `localhost:<port>`), otherwise `403`. Protects against
-  DNS rebinding.
+  DNS rebinding. On ESP32 use the numeric IPv4 address of the interface receiving the request
+  (with optional `:80`); arbitrary DNS names and `localhost` are not accepted.
 - **Changing requests** (`PUT`, `POST`, `DELETE`) must carry the header
   `X-Deck-Request: 1`, otherwise `403`. A foreign origin cannot set this header
   without a CORS preflight, and the service does not answer preflights.
@@ -102,8 +103,9 @@ All `/api/keys/<index>/...` endpoints also exist per page as
 
 `PUT` takes `host`, `port`, `username`, `tls`, `client_id` and `password` (all optional; an
 empty `host` turns MQTT off) and answers with the same object, `400` for invalid values. The
-password is write-only: it is stored in `mqtt.json` (mode 0600), never returned and not part of
-`/api/config`. The test press (`POST .../press`) only reports an `mqtt` action, it does not publish.
+password is write-only: it is stored in `mqtt.json` (mode 0600 on Linux), never returned and not part of
+`/api/config`. On the ESP32 it is stored in the unencrypted `storage` partition rather than a user-protected
+host file. The test press (`POST .../press`) only reports an `mqtt` action, it does not publish.
 
 ### `PUT /api/config`
 
